@@ -1,0 +1,45 @@
+name: Webinar Auto Recorder
+
+on:
+  workflow_dispatch: # 수동 실행 버튼 (테스트용)
+    inputs:
+      url:
+        description: '세미나 URL 주소'
+        required: true
+        default: 'https://www.google.com'
+      duration:
+        description: '녹화 시간(분)'
+        default: '1'
+  schedule:
+    - cron: '30 15 * * *' # 한국 시간 새벽 00:30 실행 (UTC 15:30)
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium --with-deps
+
+      - name: Run Recorder
+        run: |
+          # 입력받은 URL과 시간으로 실행
+          URL="${{ github.event.inputs.url || 'https://www.google.com' }}"
+          DURATION="${{ github.event.inputs.duration || '1' }}"
+          python main.py "$URL" "$DURATION"
+
+      - name: Upload Recorded Video
+        uses: actions/upload-artifact@v4
+        with:
+          name: webinar-video
+          path: recordings/
+          retention-days: 3 # 3일 동안만 보관 (용량 관리)
