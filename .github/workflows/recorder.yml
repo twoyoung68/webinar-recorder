@@ -43,10 +43,13 @@ jobs:
 
       # 6. 녹화된 영상 결과물 저장 (Artifacts)
       # 녹화가 성공하여 .mp4 파일이 생성되면 깃허브 서버에 업로드합니다.
+      # recorder.yml의 마지막 Upload 부분을 아래와 같이 수정하세요.
+
       - name: Upload Recorded Video
         uses: actions/upload-artifact@v4
-        if: always() # 실패하더라도 로그 확인을 위해 시도
+        if: always() # 실패하더라도 생성된 파일이 있다면 시도
         with:
-          name: webinar-videos
-          path: "*.mp4"
+          name: webinar-video-result
+          # main.py에서 꺼내놓은 파일명을 정확히 적어줍니다.
+          path: webinar_recording.webm
           retention-days: 7
