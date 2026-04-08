@@ -1,166 +1,176 @@
+# [Section 1: 라이브러리 및 설정]
 import streamlit as st
+import firebase_admin
+from firebase_admin import credentials, storage
 from supabase import create_client
+from datetime import datetime, timedelta
 import os
-from dotenv import load_dotenv
-from datetime import datetime
 import pytz
+from dotenv import load_dotenv
 
-# ==========================================
-# SECTION 1: 설정 및 데이터베이스 연결
-# ==========================================
+# 환경 변수 및 서비스 초기화
 load_dotenv()
-url = os.getenv("SUPABASE_URL")
-key = os.getenv("SUPABASE_KEY")
+supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
-if not url or not key:
-    st.error("⚠️ .env 파일에 SUPABASE_URL과 SUPABASE_KEY를 설정해주세요!")
-    st.stop()
+if not firebase_admin._apps:
+    cred = credentials.Certificate('firebase_key.json') 
+    firebase_admin.initialize_app(cred, {
+        'storageBucket': 'webinar-recorder.firebasestorage.app' 
+    })
+bucket = storage.bucket()
+KST = pytz.timezone('Asia/Seoul')
 
-@st.cache_resource
-def get_supabase():
-    return create_client(url, key)
-
-supabase = get_supabase()
-
-# 타임존 리스트 정의
+# 타임존 리스트
 TIMEZONES = {
-    "일본/한국 (JST/KST)": "Asia/Seoul",
-    "미국 동부 (EST/EDT)": "America/New_York",
-    "미국 서부 (PST/PDT)": "America/Los_Angeles",
+    "한국 (KST)": "Asia/Seoul",
+    "미국 (동부/EST)": "US/Eastern",
+    "미국 (서부/PST)": "US/Pacific",
     "영국 (GMT/BST)": "Europe/London",
-    "중앙 유럽 (CET/CEST)": "Europe/Berlin",
-    "중국/싱가포르 (CST)": "Asia/Shanghai"
+    "캐나다 (동부/EST)": "Canada/Eastern",
+    "독일 (CET/CEST)": "Europe/Berlin"
 }
 
-st.set_page_config(page_title="Global Webinar Recorder", layout="wide")
-st.title("🌐 해외 세미나 스마트 예약 시스템")
+st.set_page_config(page_title="Global Cloud Recorder", layout="wide")
 
+# [Section 2: 상단 안내]
+st.title("🌐 글로벌 세미나 클라우드 녹화 센터")
+st.info("해외 현지 시간을 입력하면 시스템이 자동으로 서버 시간(UTC)으로 변환합니다.")
 
-# ==========================================
-# SECTION 2: 예약 입력 UI (사용자 입력부)
-# ==========================================
+# [Section 3: 현지 시간 기반 예약 및 상태 유지]
+st.divider()
 with st.container(border=True):
-    st.subheader("📅 신규 세미나 등록")
-    webinar_url = st.text_input("세미나 접속 URL", placeholder="https://example.com/webinar")
+    st.subheader("📅 새 녹화 작업 예약")
     
-    col1, col2, col3 = st.columns(3)
+    # 중복 에러 방지를 위해 key는 단 한 번만 사용됨
+    web_url = st.text_input("웨비나 접속 URL", placeholder="https://...", key="url_input_unique")
+    
+    col1, col2, col3 = st.columns([1.5, 2, 1])
     
     with col1:
-        local_date = st.date_input("현지 날짜", datetime.now().date())
-        
+        tz_choice = st.selectbox("🌍 현지 타임존 선택", list(TIMEZONES.keys()), key="tz_select")
+        selected_tz = pytz.timezone(TIMEZONES[tz_choice])
+    
     with col2:
-        # [수정] 세션 상태를 사용하여 시간 입력 값 고정 및 5분 단위 설정
-        if "selected_time" not in st.session_state:
-            st.session_state["selected_time"] = datetime.now().time()
-            
-        local_time = st.time_input(
-            "현지 시작 시각 (5분 단위)", 
-            key="selected_time",
-            step=300 
-        )
+        # 현지 시간 입력을 위한 세션 스테이트 관리 (입력값 유지 로직)
+        now_local = datetime.now(selected_tz)
         
+        # 타임존이 바뀌었을 때만 초기 시간을 갱신
+        if "prev_tz" not in st.session_state or st.session_state.prev_tz != tz_choice:
+            st.session_state.init_date = now_local.date()
+            st.session_state.init_time = now_local.time()
+            st.session_state.prev_tz = tz_choice
+
+        c_date, c_time = st.columns(2)
+        # value에 세션 스테이트를 연결하여 사용자가 바꾼 값이 유지되게 함
+        date = c_date.date_input("현지 날짜", value=st.session_state.init_date, key="date_input")
+        tm = c_time.time_input("현지 시간", value=st.session_state.init_time, key="time_input")
+    
     with col3:
-        timezone_label = st.selectbox("현지 타임존 선택", list(TIMEZONES.keys()))
+        duration = st.number_input("녹화 시간(분)", min_value=1, value=60, key="dur_input")
+        is_now = st.checkbox("🚀 즉시 실행", key="now_input")
 
-    # --- 시차 계산 로직 ---
-    selected_tz = pytz.timezone(TIMEZONES[timezone_label])
-    local_dt = datetime.combine(local_date, local_time)
-    localized_dt = selected_tz.localize(local_dt)
-    
-    # 한국 시각(KST)으로 변환
-    kst_dt = localized_dt.astimezone(pytz.timezone("Asia/Seoul"))
-    
-    st.info(f"💡 **한국 시각 환산:** {kst_dt.strftime('%Y-%m-%d %H:%M')} KST (이 시간에 녹화가 시작됩니다)")
+    # 한국 시간 변환 미리보기
+    try:
+        local_dt = datetime.combine(date, tm)
+        localized_dt = selected_tz.localize(local_dt)
+        kst_preview = localized_dt.astimezone(KST)
+        st.code(f"💡 확인: 선택하신 현지 시간은 한국 시간(KST)으로 [ {kst_preview.strftime('%Y-%m-%d %H:%M')} ] 입니다.")
+    except Exception:
+        pass
 
-    duration = st.number_input("녹화 지속 시간(분)", min_value=1, value=60)
+    if st.button("✅ 예약 확정하기", use_container_width=True, type="primary"):
+        if web_url:
+            try:
+                utc_dt = localized_dt.astimezone(pytz.utc).isoformat()
+                status = "trigger" if is_now else "pending"
+                
+                # pc_owner 없이 전송
+                supabase.table("webinar_reservations").insert({
+                    "webinar_url": web_url,
+                    "scheduled_at": utc_dt,
+                    "duration_min": duration,
+                    "status": status
+                }).execute()
+                
+                st.success(f"🎉 예약 성공! 한국 시간 {kst_preview.strftime('%H:%M')}에 시작됩니다.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ 저장 실패: {e}")
+        else:
+            st.warning("URL을 입력해 주세요.")
 
-
-# ==========================================
-# SECTION 3: 데이터 저장 로직 (Supabase 전송)
-# ==========================================
-if st.button("🚀 예약 확정 및 서버 전송"):
-        formatted_kst = kst_dt.isoformat()
-        
-        data = {
-            "webinar_url": webinar_url,
-            "scheduled_at": formatted_kst,
-            "duration_min": duration,
-            "status": "pending",
-            "timezone_info": timezone_label
-        }
-        
-        try:
-            # 데이터 전송
-            supabase.table("webinar_reservations").insert(data).execute()
-            
-            # 저장 성공 피드백 추가
-            st.balloons() # 축하 풍선 효과
-            st.success(f"✨ 저장 완료! [{kst_dt.strftime('%m/%d %H:%M')}] 녹화가 예약되었습니다.")
-            
-            # 2초 뒤 화면 새로고침 (목록 업데이트를 위해)
-            import time
-            time.sleep(2)
-            st.rerun()
-            
-        except Exception as e:
-            st.error(f"❌ 저장 실패: {e}")
-
-
-# ==========================================
-# SECTION 4: 예약 목록 및 관리 (취소/상태 확인)
-# ==========================================
+# [Section 4: 실시간 현황 모니터링 수정본]
 st.divider()
-st.subheader("📋 녹화 현황 및 결과물")
+st.subheader("📋 실시간 예약 현황")
+
+# st.button("🔄 현황 새로고침") # 수동 새로고침 버튼을 추가하면 확인이 더 빠릅니다.
 
 try:
-    response = supabase.table("webinar_reservations").select("*").order("scheduled_at", desc=True).limit(20).execute()
+    # 캐시 방지를 위해 항상 최신 10개를 시간순으로 가져옴
+    res = supabase.table("webinar_reservations").select("*").order("scheduled_at", desc=True).limit(10).execute()
     
-    if response.data:
-        for item in response.data:
-            status = item['status']
-            
-            # [수정] 9시간 오차 교정 표시 로직
-            try:
-                # DB에서 가져온 시간을 읽고 한국 시간으로 강제 변환
-                raw_time = item['scheduled_at'].replace('Z', '+00:00')
-                dt_obj = datetime.fromisoformat(raw_time)
-                kst_display = dt_obj.astimezone(pytz.timezone("Asia/Seoul"))
-                display_time = kst_display.strftime('%Y-%m-%d %H:%M')
-            except:
-                display_time = item['scheduled_at']
-
-            status_style = {"pending": "📅 [대기 중]", "running": "⏳ [녹화 중]", "completed": "✅ [완료]", "failed": "❌ [실패]"}
-            
-            with st.expander(f"{status_style.get(status, status)} {item['webinar_url'][:40]}..."):
-                c1, c2, c3 = st.columns([2, 1, 1])
-                with c1:
-                    st.write(f"**한국 시작 시간:** {display_time} KST")
-                    st.write(f"**지속 시간:** {item['duration_min']}분")
-                with c2:
-                    st.write(f"**현지 타임존:** {item.get('timezone_info', 'N/A')}")
-                with c3:
-                    # 1. 예약 취소 버튼 (대기 중일 때만)
-                    if status == "pending":
-                        if st.button("🗑️ 예약 취소", key=f"del_{item['id']}"):
-                            supabase.table("webinar_reservations").delete().eq("id", item['id']).execute()
-                            st.warning("예약이 삭제되었습니다.")
-                            st.rerun()
-                    
-                    # 2. 다운로드 버튼 (녹화가 완료되어 video_url이 있을 때)
-                    elif status == "completed":
-                        video_url = item.get('video_url')
-                        if video_url:
-                            st.link_button("📥 녹화본 다운로드", video_url, type="primary") # 강조된 파란 버튼
-                        else:
-                            st.info("📂 파일 업로드 중...")
-                    
-                    # 3. 기타 상태 표시
-                    elif status == "running":
+    if res.data:
+        for item in res.data:
+            with st.container(border=True):
+                m1, m2, m3 = st.columns([3, 1, 1])
+                with m1:
+                    st.write(f"🔗 {item['webinar_url']}")
+                    # 시간 표시 로직
+                    u_dt = datetime.fromisoformat(item['scheduled_at'].replace('Z', '+00:00'))
+                    k_dt = u_dt.astimezone(KST)
+                    st.caption(f"예약시간(KST): {k_dt.strftime('%Y-%m-%d %H:%M')} | {item['duration_min']}분")
+                
+                with m2:
+                    # 상태 표시 (DB의 실제 status 값을 그대로 반영)
+                    st_val = item['status']
+                    if st_val == "pending": 
+                        st.info("📅 대기 중")
+                    elif st_val == "running": 
                         st.warning("⏳ 녹화 중")
+                    elif st_val == "completed": 
+                        st.success("✅ 완료됨")
+                    elif st_val == "trigger":
+                        st.error("🚀 서버 응답 대기")
                     else:
-                        st.error("❌ 녹화 실패")
-
+                        st.write(f"❓ {st_val}")
+                
+                with m3:
+                    if st.button("취소/삭제", key=f"del_db_{item['id']}"):
+                        supabase.table("webinar_reservations").delete().eq("id", item['id']).execute()
+                        st.rerun()
     else:
-        st.info("현재 등록된 예약 내역이 없습니다.")
+        st.caption("대기 중인 예약이 없습니다.")
 except Exception as e:
-    st.error(f"데이터 로드 오류: {e}")
+    st.error(f"데이터 로드 실패: {e}")
+
+# [Section 5: 관리자 전용 제어 (비번 1207)]
+st.sidebar.title("🔐 관리자 전용")
+if st.sidebar.text_input("비밀번호", type="password") == "1207":
+    st.sidebar.success("인증 완료")
+    
+    st.sidebar.subheader("🗑️ 서버 영상 파일 관리")
+    blobs = list(bucket.list_blobs())
+    used_mb = sum([b.size for b in blobs]) / (1024 * 1024)
+    st.sidebar.write(f"📊 사용량: **{used_mb:.1f} / 5120 MB**")
+    
+    for b in blobs:
+        c_s1, c_s2 = st.sidebar.columns([3, 1])
+        c_s1.caption(b.name)
+        if c_s2.button("삭제", key=f"side_file_{b.name}"):
+            b.delete()
+            st.rerun()
+
+# [Section 6: 다운로드 센터]
+st.divider()
+st.subheader("📥 녹화 완료 영상 다운로드")
+blobs = list(bucket.list_blobs())
+if not blobs:
+    st.info("아직 서버에 저장된 영상 파일이 없습니다.")
+else:
+    for blob in blobs:
+        with st.container(border=True):
+            d1, d2, d3 = st.columns([3, 1, 1])
+            d1.write(f"📁 **{blob.name}**")
+            d2.write(f"📏 {round(blob.size/(1024*1024), 1)} MB")
+            d_url = blob.generate_signed_url(expiration=timedelta(hours=1))
+            d3.link_button("💾 내 PC 저장", d_url, type="primary")

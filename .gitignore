@@ -1,5 +1,7 @@
+# .gitignore
 .env
+firebase_key.json
+temp_records/
 __pycache__/
-recordings/
+venv/
 *.webm
-.streamlit/
