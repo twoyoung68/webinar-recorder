@@ -1,38 +1,52 @@
-name: Webinar Auto Checker
+name: Webinar Auto Recorder
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # 5분마다 자동 실행
-  workflow_dispatch:      # 수동 실행 버튼
+    # 5분마다 자동으로 실행 (UTC 기준이므로 한국 시간과는 무관하게 5분 간격)
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    # 필요할 때 버튼을 눌러 수동으로 실행 가능
 
 jobs:
-  check_and_record:
+  check-and-record:
     runs-on: ubuntu-latest
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
-      - name: Checkout code
+      # 1. 소스 코드 가져오기
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. 파이썬 환경 설정
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10'
 
+      # 3. 필수 라이브러리 설치
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
-          playwright install chromium --with-deps
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
+      # 4. [핵심] Playwright 브라우저 및 시스템 의존성 설치
+      # 이 부분이 빠지면 'command not found' 에러가 발생합니다.
+      - name: Install Playwright Browsers
+        run: |
+          python -m playwright install --with-deps chromium
+
+      # 5. 녹화 로봇(checker.py) 실행
       - name: Run Checker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python checker.py
 
+      # 6. 녹화된 영상 결과물 저장 (Artifacts)
+      # 녹화가 성공하여 .mp4 파일이 생성되면 깃허브 서버에 업로드합니다.
       - name: Upload Recorded Video
         uses: actions/upload-artifact@v4
+        if: always() # 실패하더라도 로그 확인을 위해 시도
         with:
-          name: webinar-video-${{ github.run_id }}
-          path: recordings/
-          retention-days: 3
+          name: webinar-videos
+          path: "*.mp4"
+          retention-days: 7
