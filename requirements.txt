@@ -1,4 +1,6 @@
 streamlit
 supabase
-requests
 python-dotenv
+playwright
+pytz
+requests
