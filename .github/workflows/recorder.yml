@@ -1,31 +1,24 @@
-name: Webinar Auto Recorder
+name: Webinar Auto Checker
 
 on:
-  workflow_dispatch:
-    inputs:
-      url:
-        description: '세미나 URL 주소'
-        required: true
-        default: 'https://www.google.com'
-      duration:
-        description: '녹화 시간(분)'
-        default: '1'
   schedule:
-    - cron: '30 15 * * *' # 한국 시간 새벽 00:30 (UTC 15:30)
+    - cron: '*/5 * * * *'  # 5분마다 자동 실행
+  workflow_dispatch:      # 수동 실행 버튼
 
 jobs:
-  record:
+  check_and_record:
     runs-on: ubuntu-latest
-    # 경고에서 권장한 대로 Node.js 24 환경을 명시적으로 사용 설정합니다.
     env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4 # 최신 v4는 내부적으로 대응 중입니다.
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5 # v4에서 v5로 업데이트
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -34,15 +27,12 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium --with-deps
 
-      - name: Run Recorder
-        run: |
-          URL="${{ github.event.inputs.url || 'https://www.google.com' }}"
-          DURATION="${{ github.event.inputs.duration || '1' }}"
-          python main.py "$URL" "$DURATION"
+      - name: Run Checker
+        run: python checker.py
 
       - name: Upload Recorded Video
-        uses: actions/upload-artifact@v4 # v4는 현재 안정적입니다.
+        uses: actions/upload-artifact@v4
         with:
-          name: webinar-video
+          name: webinar-video-${{ github.run_id }}
           path: recordings/
           retention-days: 3
