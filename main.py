@@ -1,7 +1,8 @@
-# [Section 1: 라이브러리 로드 및 설정]
+# [Section 1: 라이브러리 로드 및 Firebase 초기화 수정]
 import asyncio
 import os
 import sys
+import json
 import firebase_admin
 from firebase_admin import credentials, storage
 from playwright.async_api import async_playwright
@@ -9,18 +10,30 @@ from datetime import datetime
 from supabase import create_client
 from dotenv import load_dotenv
 
-# 환경 변수 로드 (Supabase 접속용)
 load_dotenv()
 url = os.getenv("SUPABASE_URL")
 key = os.getenv("SUPABASE_KEY")
 supabase = create_client(url, key)
 
-# Firebase 초기화
+# --- Firebase 초기화 로직 수정 ---
 if not firebase_admin._apps:
-    cred = credentials.Certificate('firebase_key.json')
+    # 1. 환경 변수에서 JSON 텍스트 가져오기
+    firebase_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
+    
+    if firebase_json:
+        # 2. GitHub 서버 환경: 환경 변수의 텍스트를 파일로 임시 저장
+        with open('temp_firebase_key.json', 'w') as f:
+            f.write(firebase_json)
+        cred = credentials.Certificate('temp_firebase_key.json')
+    else:
+        # 3. 로컬 개발 환경: 기존 파일 방식 유지
+        cred = credentials.Certificate('firebase_key.json')
+
     firebase_admin.initialize_app(cred, {
         'storageBucket': 'webinar-recorder.firebasestorage.app'
     })
+# -------------------------------
+
 
 # [Section 2: 핵심 보조 함수 - 업로드 및 상태 업데이트]
 def upload_to_firebase(local_path, file_name):

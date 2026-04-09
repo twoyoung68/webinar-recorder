@@ -1,0 +1,38 @@
+# [Section 1: 워크플로우 이름 및 실행 트리거]
+name: Global Webinar Recorder Scheduler
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # 10분마다 자동으로 실행 (UTC 기준)
+  workflow_dispatch:        # 사용자가 GitHub 웹에서 수동으로 실행 가능
+
+# [Section 2: 서버 환경 설정 및 작업 정의]
+jobs:
+  check-and-record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180    # 녹화 시간을 고려하여 3시간 제한 설정
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v3
+
+      - name: Python 환경 설정
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 필수 라이브러리 및 브라우저 설치
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium
+          # 녹화에 필요한 시스템 라이브러리 추가 설치
+          sudo apt-get install -y libgbm-dev libnss3 libasound2
+
+      # [Section 3: 스케줄러 실행]
+      - name: 예약 확인 및 녹화 엔진 가동
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          # Firebase 키 파일은 JSON 텍스트 전체를 Secret에 저장해야 함
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: python scheduler.py
