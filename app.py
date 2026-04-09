@@ -1,24 +1,43 @@
-# [Section 1: 라이브러리 및 설정]
+# [Section 1: 라이브러리 로드 및 설정 수정]
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, storage
 from supabase import create_client
 from datetime import datetime, timedelta
 import os
+import json  # 추가됨
 import pytz
 from dotenv import load_dotenv
 
-# 환경 변수 및 서비스 초기화
+# 환경 변수 로드
 load_dotenv()
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
+# --- Firebase 초기화 수정 (클라우드/로컬 공용) ---
 if not firebase_admin._apps:
-    cred = credentials.Certificate('firebase_key.json') 
+    firebase_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
+    
+    if firebase_json:
+        # 클라우드 환경 (Streamlit Secrets 사용)
+        try:
+            # JSON 텍스트를 파싱해서 바로 인증 정보로 사용
+            service_account_info = json.loads(firebase_json)
+            cred = credentials.Certificate(service_account_info)
+        except Exception as e:
+            # 혹시 형식이 틀렸을 경우 임시 파일 방식으로 재시도
+            with open('temp_firebase_key.json', 'w') as f:
+                f.write(firebase_json)
+            cred = credentials.Certificate('temp_firebase_key.json')
+    else:
+        # 로컬 개발 환경 (노트북에 파일이 있을 때)
+        cred = credentials.Certificate('firebase_key.json')
+
     firebase_admin.initialize_app(cred, {
-        'storageBucket': 'webinar-recorder.firebasestorage.app' 
+        'storageBucket': 'webinar-recorder.firebasestorage.app'
     })
 bucket = storage.bucket()
 KST = pytz.timezone('Asia/Seoul')
+
 
 # 타임존 리스트
 TIMEZONES = {
