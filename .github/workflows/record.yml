@@ -21,14 +21,13 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 필수 라이브러리 및 브라우저 설치
+- name: 필수 라이브러리 및 브라우저 설치
         run: |
           pip install -r requirements.txt
-          pip install -r requirements.txt
           # 1. 브라우저 설치
-          playwright install chromium
-          # 2. 해당 OS에 필요한 모든 시스템 의존성(libasound 등) 자동 설치
-          sudo playwright install-deps
+          python -m playwright install chromium
+          # 2. 시스템 의존성 설치 (명령어 앞에 python -m 을 붙여 경로 문제 해결)
+          sudo python -m playwright install-deps
 
 
       # [Section 3: 스케줄러 실행]
