@@ -2,8 +2,8 @@ name: Global Webinar Recorder Scheduler
 
 on:
   schedule:
-    - cron: '*/10 * * * *'  # 10분마다 자동으로 실행
-  workflow_dispatch:        # 수동 실행 버튼 활성화
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
 
 jobs:
   check-and-record:
@@ -18,10 +18,18 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+          cache: 'pip' # 설치 속도 향상을 위한 캐시 활성화
 
-      - name: 필수 라이브러리 및 브라우저 설치
+      - name: 필수 라이브러리 설치
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # 만약 requirements.txt에 누락되었을 경우를 대비해 직접 설치
+          pip install playwright supabase firebase-admin python-dotenv pytz
+
+      - name: 브라우저 및 의존성 설치
+        run: |
+          # python -m 을 붙여서 현재 환경의 playwright 모듈을 확실히 실행
           python -m playwright install chromium
           sudo python -m playwright install-deps
 
