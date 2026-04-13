@@ -20,26 +20,24 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
-      - name: 1. 필수 라이브러리 설치
+      - name: 통합 라이브러리 및 브라우저 설치
         run: |
+          # 1. 라이브러리 설치 및 경로 강제 인식
           python -m pip install --upgrade pip
           pip install playwright supabase firebase-admin python-dotenv pytz
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          
+          # 2. [핵심] 설치된 패키지 경로를 현재 셸 세션에 강제 주입
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          
+          # 3. 브라우저 및 의존성 설치 (python -m 을 붙여 현재 파이썬 환경 고정)
+          python -m playwright install chromium --with-deps
 
-      # --- [이 부분이 마법의 구간입니다] ---
-      - name: 2. Playwright 공식 브라우저 및 의존성 설치
-        # 마이크로소프트에서 만든 공식 액션을 사용하면 경로 문제를 알아서 해결해줍니다.
-        uses: microsoft/playwright-github-action@v1
-
-      - name: 3. 브라우저 엔진 설치 확인
-        run: npx playwright install chromium --with-deps
-      # ------------------------------------
-
-      - name: 4. 예약 확인 및 녹화 엔진 가동
+      - name: 예약 확인 및 녹화 엔진 가동
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          # 현재 환경에서 활성화된 파이썬(setup-python이 잡아준 것)으로 실행
+          # 실행 시에도 현재 설치된 환경을 명확히 지정
           python scheduler.py
