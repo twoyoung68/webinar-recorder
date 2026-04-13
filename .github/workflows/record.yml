@@ -18,22 +18,18 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          cache: 'pip'
 
-      - name: 라이브러리 설치
+      - name: 통합 설치 및 브라우저 세팅 (한 번에 실행)
         run: |
+          # 1. 라이브러리 설치
           python -m pip install --upgrade pip
           pip install playwright supabase firebase-admin python-dotenv pytz
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
-      # --- 여기서부터가 GitHub 공식 수정 방식입니다 ---
-      - name: Playwright 브라우저 및 의존성 공식 설치
-        uses: microsoft/playwright-github-action@v1
-
-      - name: 브라우저 설치 확인 (의존성 포함)
-        run: npx playwright install --with-deps chromium
-      # ------------------------------------------
-
+          
+          # 2. [가장 중요] 설치 직후 이 Step 안에서 바로 브라우저와 의존성 설치
+          # 이렇게 해야 'No module named playwright' 에러를 피할 수 있습니다.
+          python -m playwright install chromium --with-deps
+          
       - name: 예약 확인 및 녹화 엔진 가동
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
