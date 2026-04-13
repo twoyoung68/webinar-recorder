@@ -18,30 +18,25 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+          cache: 'pip'
 
-      - name: 절대 경로 기반 통합 설치
+      - name: 라이브러리 설치
         run: |
-          # 1. 현재 파이썬의 절대 경로 확인
-          PYTHON_PATH=$(which python)
-          echo "Using Python at: $PYTHON_PATH"
-          
-          # 2. 해당 파이썬으로 직접 라이브러리 설치
-          $PYTHON_PATH -m pip install --upgrade pip
-          $PYTHON_PATH -m pip install playwright supabase firebase-admin python-dotenv pytz
-          if [ -f requirements.txt ]; then $PYTHON_PATH -m pip install -r requirements.txt; fi
-          
-          # 3. 브라우저 설치
-          $PYTHON_PATH -m playwright install chromium
-          
-          # 4. [핵심] sudo 실행 시에도 현재 파이썬 경로를 직접 전달하여 의존성 설치
-          sudo $PYTHON_PATH -m playwright install-deps
+          python -m pip install --upgrade pip
+          pip install playwright supabase firebase-admin python-dotenv pytz
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      # --- 여기서부터가 GitHub 공식 수정 방식입니다 ---
+      - name: Playwright 브라우저 및 의존성 공식 설치
+        uses: microsoft/playwright-github-action@v1
+
+      - name: 브라우저 설치 확인 (의존성 포함)
+        run: npx playwright install --with-deps chromium
+      # ------------------------------------------
 
       - name: 예약 확인 및 녹화 엔진 가동
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: |
-          # 셸 변수를 다시 선언하여 절대 경로로 실행
-          PYTHON_PATH=$(which python)
-          $PYTHON_PATH scheduler.py
+        run: python scheduler.py
