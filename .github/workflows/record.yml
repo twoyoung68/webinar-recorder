@@ -19,17 +19,20 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 가상 환경 구축 및 라이브러리 설치
+      - name: 가상 환경 구축 및 의존성 설치
         run: |
-          # 1. 가상 환경 생성 및 활성화 후 설치
-          python -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install playwright supabase firebase-admin python-dotenv pytz
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          # 1. 가상 환경 생성
+          python3 -m venv venv
           
-          # 2. 브라우저 및 의존성 설치 (가상 환경 내부의 playwright 사용)
-          playwright install chromium
+          # 2. 가상 환경의 pip로 라이브러리 설치 (절대 경로 사용)
+          ./venv/bin/pip install --upgrade pip
+          ./venv/bin/pip install playwright supabase firebase-admin python-dotenv pytz
+          if [ -f requirements.txt ]; then ./venv/bin/pip install -r requirements.txt; fi
+          
+          # 3. 브라우저 설치 (가상 환경의 playwright 실행)
+          ./venv/bin/python -m playwright install chromium
+          
+          # 4. [핵심] sudo 실행 시 가상 환경의 파이썬 경로를 직접 전달하여 의존성 설치
           sudo ./venv/bin/python -m playwright install-deps
 
       - name: 예약 확인 및 녹화 엔진 가동
@@ -38,6 +41,5 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          # 가상 환경의 파이썬으로 실행하여 경로 문제 완전 해결
-          source venv/bin/activate
-          python scheduler.py
+          # 가상 환경의 파이썬을 직접 호출하여 실행
+          ./venv/bin/python scheduler.py
