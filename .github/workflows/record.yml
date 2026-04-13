@@ -15,27 +15,23 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Python 환경 설정
-        uses: actions/setup-python@v4
+        uses: collections/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: 가상 환경 및 의존성 완벽 설치
+      - name: 시스템 전체에 라이브러리 및 브라우저 설치
         run: |
-          # 1. 가상 환경 생성 및 활성화
-          python -m venv venv
-          source venv/bin/activate
+          # 1. 시스템 파이썬에 직접 설치 (사용자 권한으로 설치하되 경로 인식을 위해 --user 제외)
+          python -m pip install --upgrade pip
+          python -m pip install playwright supabase firebase-admin python-dotenv pytz
+          if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
           
-          # 2. 필수 패키지 설치
-          pip install --upgrade pip
-          pip install playwright supabase firebase-admin python-dotenv pytz
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          # 2. 브라우저 설치
+          python -m playwright install chromium
           
-          # 3. 브라우저 설치
-          playwright install chromium
-          
-          # 4. [핵심] sudo가 가상환경의 PATH를 인식하도록 -E 옵션 사용
-          # 또는 직접 경로를 지정하여 시스템 라이브러리 설치
-          sudo -E ./venv/bin/python -m playwright install-deps
+          # 3. [핵심] sudo를 쓰되, 정확한 파이썬 실행 위치를 수동으로 지정
+          # $(which python) 명령어가 현재 활성화된 파이썬 위치를 찾아줍니다.
+          sudo $(which python) -m playwright install-deps
 
       - name: 예약 확인 및 녹화 엔진 가동
         env:
@@ -43,5 +39,5 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          source venv/bin/activate
+          # 시스템 파이썬으로 직접 실행
           python scheduler.py
