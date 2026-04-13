@@ -15,23 +15,26 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Python 환경 설정
-        uses: collections/setup-python@v4
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: 시스템 전체에 라이브러리 및 브라우저 설치
+      - name: 절대 경로 기반 통합 설치
         run: |
-          # 1. 시스템 파이썬에 직접 설치 (사용자 권한으로 설치하되 경로 인식을 위해 --user 제외)
-          python -m pip install --upgrade pip
-          python -m pip install playwright supabase firebase-admin python-dotenv pytz
-          if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
+          # 1. 현재 파이썬의 절대 경로 확인
+          PYTHON_PATH=$(which python)
+          echo "Using Python at: $PYTHON_PATH"
           
-          # 2. 브라우저 설치
-          python -m playwright install chromium
+          # 2. 해당 파이썬으로 직접 라이브러리 설치
+          $PYTHON_PATH -m pip install --upgrade pip
+          $PYTHON_PATH -m pip install playwright supabase firebase-admin python-dotenv pytz
+          if [ -f requirements.txt ]; then $PYTHON_PATH -m pip install -r requirements.txt; fi
           
-          # 3. [핵심] sudo를 쓰되, 정확한 파이썬 실행 위치를 수동으로 지정
-          # $(which python) 명령어가 현재 활성화된 파이썬 위치를 찾아줍니다.
-          sudo $(which python) -m playwright install-deps
+          # 3. 브라우저 설치
+          $PYTHON_PATH -m playwright install chromium
+          
+          # 4. [핵심] sudo 실행 시에도 현재 파이썬 경로를 직접 전달하여 의존성 설치
+          sudo $PYTHON_PATH -m playwright install-deps
 
       - name: 예약 확인 및 녹화 엔진 가동
         env:
@@ -39,5 +42,6 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          # 시스템 파이썬으로 직접 실행
-          python scheduler.py
+          # 셸 변수를 다시 선언하여 절대 경로로 실행
+          PYTHON_PATH=$(which python)
+          $PYTHON_PATH scheduler.py
