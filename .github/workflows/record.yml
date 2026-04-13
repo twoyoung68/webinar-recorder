@@ -19,23 +19,25 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 통합 라이브러리 및 브라우저 설치
+      - name: 가상 환경 구축 및 라이브러리 설치
         run: |
-          # 1. pip 최신화 및 핵심 라이브러리 강제 설치
-          python3 -m pip install --upgrade pip
-          python3 -m pip install playwright supabase firebase-admin python-dotenv pytz
+          # 1. 가상 환경 생성 및 활성화 후 설치
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install playwright supabase firebase-admin python-dotenv pytz
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           
-          # 2. requirements.txt가 있다면 추가 설치
-          if [ -f requirements.txt ]; then python3 -m pip install -r requirements.txt; fi
-          
-          # 3. 브라우저 및 의존성 설치 (python3 -m 사용으로 경로 고정)
-          python3 -m playwright install chromium
-          sudo python3 -m playwright install-deps
+          # 2. 브라우저 및 의존성 설치 (가상 환경 내부의 playwright 사용)
+          playwright install chromium
+          sudo ./venv/bin/python -m playwright install-deps
 
       - name: 예약 확인 및 녹화 엔진 가동
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        # 실행 시에도 python3를 명시하여 설치된 라이브러리를 정확히 찾게 함
-        run: python3 scheduler.py
+        run: |
+          # 가상 환경의 파이썬으로 실행하여 경로 문제 완전 해결
+          source venv/bin/activate
+          python scheduler.py
