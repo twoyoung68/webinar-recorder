@@ -20,27 +20,21 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
-      - name: 필수 라이브러리 설치
+      - name: 1. 필수 라이브러리 설치
         run: |
           python -m pip install --upgrade pip
           pip install playwright supabase firebase-admin python-dotenv pytz
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      # --- [이 부분이 지옥행 열차를 멈출 핵심입니다] ---
-      - name: Playwright 공식 브라우저 설치 도구 실행
-        uses: microsoft/playwright-github-action@v1
+      - name: 2. Playwright 브라우저 및 의존성 설치 (공식 방식)
+        # 파이썬 경로 문제를 피하기 위해 npx(노드 실행기)로 브라우저를 직접 설치합니다.
+        run: npx playwright install chromium --with-deps
 
-      - name: 브라우저 및 시스템 의존성 강제 설치
-        run: |
-          # 파이썬 모듈 방식이 아닌 npx(노드 실행기)로 직접 설치하여 경로 문제를 우회합니다.
-          npx playwright install chromium --with-deps
-      # ---------------------------------------------
-
-      - name: 예약 확인 및 녹화 엔진 가동
+      - name: 3. 예약 확인 및 녹화 엔진 가동
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          # setup-python이 잡아준 '진짜 파이썬'의 경로를 찾아 실행합니다.
+          # $(which python)을 사용하여 현재 환경의 '진짜 파이썬'을 찾아 실행합니다.
           $(which python) scheduler.py
