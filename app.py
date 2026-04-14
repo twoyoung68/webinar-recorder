@@ -1,40 +1,40 @@
-# [Section 1: 라이브러리 로드 및 설정 수정]
+# [Section 1: Firebase 초기화 최종 안정화 버전]
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, storage
 from supabase import create_client
-from datetime import datetime, timedelta
 import os
-import json  # 추가됨
+import json
 import pytz
 from dotenv import load_dotenv
 
-# 환경 변수 로드
 load_dotenv()
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
-# --- Firebase 초기화 수정 (클라우드/로컬 공용) ---
 if not firebase_admin._apps:
     firebase_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
     
     if firebase_json:
-        # 클라우드 환경 (Streamlit Secrets 사용)
+        # 클라우드 환경: Secrets에서 읽기
         try:
-            # JSON 텍스트를 파싱해서 바로 인증 정보로 사용
-            service_account_info = json.loads(firebase_json)
-            cred = credentials.Certificate(service_account_info)
+            # 문자열 내의 줄바꿈이나 특수문자 문제를 방지하기 위해 정제 후 로드
+            info = json.loads(firebase_json, strict=False)
+            cred = credentials.Certificate(info)
         except Exception as e:
-            # 혹시 형식이 틀렸을 경우 임시 파일 방식으로 재시도
-            with open('temp_firebase_key.json', 'w') as f:
-                f.write(firebase_json)
-            cred = credentials.Certificate('temp_firebase_key.json')
+            st.error(f"⚠️ Firebase 설정 오류: JSON 형식을 확인하세요. ({e})")
+            st.stop() # 에러 발생 시 진행 중단
     else:
-        # 로컬 개발 환경 (노트북에 파일이 있을 때)
-        cred = credentials.Certificate('firebase_key.json')
+        # 로컬 환경: 파일에서 읽기
+        if os.path.exists('firebase_key.json'):
+            cred = credentials.Certificate('firebase_key.json')
+        else:
+            st.error("❌ Firebase 키 파일이 없습니다.")
+            st.stop()
 
     firebase_admin.initialize_app(cred, {
         'storageBucket': 'webinar-recorder.firebasestorage.app'
     })
+
 bucket = storage.bucket()
 KST = pytz.timezone('Asia/Seoul')
 
