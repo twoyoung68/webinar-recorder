@@ -5,7 +5,7 @@ from firebase_admin import credentials, storage
 from supabase import create_client
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta  # timedelta를 추가합니다.
 import pytz
 from dotenv import load_dotenv
 
