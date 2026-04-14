@@ -5,6 +5,7 @@ from firebase_admin import credentials, storage
 from supabase import create_client
 import os
 import json
+from datetime import datetime
 import pytz
 from dotenv import load_dotenv
 
@@ -67,7 +68,7 @@ with st.container(border=True):
     
     with col1:
         tz_choice = st.selectbox("🌍 현지 타임존 선택", list(TIMEZONES.keys()), key="tz_select")
-        selected_tz = pytz.timezone(TIMEZONES[tz_choice])
+        selected_tz = pytz.timezone("Asia/Seoul")
     
     with col2:
         # 현지 시간 입력을 위한 세션 스테이트 관리 (입력값 유지 로직)
