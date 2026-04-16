@@ -55,12 +55,13 @@ async def record_webinar(res_id, target_url, duration_min):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         
-        # 480p 해상도 설정 (서버 부하 감소 및 용량 최적화)
+        # [해상도 최적화] 기존 대비 절반 이하로 낮추어 용량과 부하를 줄입니다.
+        # 640x360은 16:9 비율을 유지하면서도 매우 가벼운 설정입니다.
         context = await browser.new_context(
-            viewport={'width': 854, 'height': 480},
+            viewport={'width': 640, 'height': 360},
             record_video_dir="temp_records/",
-            record_video_size={'width': 854, 'height': 480},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            record_video_size={'width': 640, 'height': 360},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         
         page = await context.new_page()
