@@ -76,23 +76,29 @@ async def record_webinar(res_id, target_url, duration_min):
             await asyncio.sleep(10)
             await page.reload(wait_until="networkidle")
             
-            # 2. 스마트 클릭 알고리즘 (버튼 탐색)
-            # Gasworld TV 및 각종 웨비나 플랫폼의 버튼 패턴 리스트
-            selectors = [
-                "text='Login'", "text='로그인'",        # 로그인 버튼 대응
-                "text='Sign In'", "text='Enter'",       # 입장 버튼 대응
-                "text='웹에서 참여'", "text='Join on the web'", 
-                "text='Listen Only'", "button[aria-label='Play']",
-                ".vjs-big-play-button", ".play-button", "text='Watch now'"
+            
+
+            # 1. 유연한 매칭을 위한 키워드 리스트
+            # 'has-text'를 사용하면 해당 문구가 포함만 되어 있어도 찾습니다.
+            flexible_selectors = [
+                "button:has-text('Join')",             # 'Join'이 들어간 모든 버튼
+                "button:has-text('browser')",          # 브라우저에서 계속하기 등
+                "button:has-text('web')",              # 웹에서 참여 등
+                "button:has-text('Watch')",            # 시청하기 관련
+                "button:has-text('시작')",             # 한국어 대응
+                "button:has-text('참여')",             # 한국어 대응
+                ".vjs-big-play-button",                # 비디오 플레이어 버튼 (클래스명)
+                "button[aria-label*='Play']"           # Play 단어가 포함된 레이블
             ]
             
-            print("🔍 입장/재생 버튼 탐색 중...")
-            for selector in selectors:
+            print("🔍 지능형 버튼 탐색 시작...")
+            for selector in flexible_selectors:
                 try:
-                    btn = page.locator(selector)
-                    if await btn.is_visible(timeout=3000): # 각 버튼당 3초만 확인
-                        await btn.click()
-                        print(f"✅ 버튼 클릭 성공: {selector}")
+                    # 해당 키워드를 가진 요소가 화면에 나타날 때까지 최대 5초 대기
+                    target = page.locator(selector).first # 여러 개면 첫 번째 것
+                    if await target.is_visible(timeout=5000):
+                        await target.click()
+                        print(f"🎯 매칭 성공 및 클릭: {selector}")
                         await asyncio.sleep(5)
                         break
                 except:
