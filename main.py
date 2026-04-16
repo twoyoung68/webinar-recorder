@@ -78,6 +78,8 @@ async def record_webinar(res_id, target_url, duration_min):
             # 2. 스마트 클릭 알고리즘 (버튼 탐색)
             # Gasworld TV 및 각종 웨비나 플랫폼의 버튼 패턴 리스트
             selectors = [
+                "text='Login'", "text='로그인'",        # 로그인 버튼 대응
+                "text='Sign In'", "text='Enter'",       # 입장 버튼 대응
                 "text='웹에서 참여'", "text='Join on the web'", 
                 "text='Listen Only'", "button[aria-label='Play']",
                 ".vjs-big-play-button", ".play-button", "text='Watch now'"
@@ -90,7 +92,7 @@ async def record_webinar(res_id, target_url, duration_min):
                     if await btn.is_visible(timeout=3000): # 각 버튼당 3초만 확인
                         await btn.click()
                         print(f"✅ 버튼 클릭 성공: {selector}")
-                        await asyncio.sleep(3)
+                        await asyncio.sleep(5)
                         break
                 except:
                     continue
