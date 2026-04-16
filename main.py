@@ -1,4 +1,4 @@
-# [Section 1: 라이브러리 로드 및 Firebase 초기화 수정]
+# [Section 1: 라이브러리 및 설정]
 import asyncio
 import os
 import sys
@@ -15,7 +15,7 @@ url = os.getenv("SUPABASE_URL")
 key = os.getenv("SUPABASE_KEY")
 supabase = create_client(url, key)
 
-# --- Firebase 초기화 로직 ---
+# --- Firebase 초기화 ---
 if not firebase_admin._apps:
     firebase_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
     if firebase_json:
@@ -48,14 +48,14 @@ def update_db_status(res_id, status_text):
     except Exception as e:
         print(f"⚠️ DB 상태 업데이트 실패: {e}")
 
-# [Section 3: 녹화 수행 엔진 (입장 알고리즘 보강)]
+# [Section 3: 녹화 수행 엔진 (스마트 클릭 로직 포함)]
 async def record_webinar(res_id, target_url, duration_min):
     update_db_status(res_id, "running")
     
     async with async_playwright() as p:
-        # 브라우저 실행 (가상 디스플레이 설정 포함)
         browser = await p.chromium.launch(headless=True)
         
+        # 480p 해상도 설정 (서버 부하 감소 및 용량 최적화)
         context = await browser.new_context(
             viewport={'width': 854, 'height': 480},
             record_video_dir="temp_records/",
@@ -67,44 +67,45 @@ async def record_webinar(res_id, target_url, duration_min):
         
         try:
             print(f"🔗 세미나 접속 시도: {target_url}")
+            # 네트워크가 안정될 때까지 최대 90초 대기
             await page.goto(target_url, timeout=90000, wait_until="networkidle")
             
-            # [추가] 1. 입장 전 새로고침 로직 (세션 활성화)
-            print("⏳ 10초 대기 후 페이지를 새로고침하여 입장을 확인합니다...")
+            # 1. 입장 전 새로고침 (세션 활성화 및 대기화면 탈출)
+            print("⏳ 10초 대기 후 페이지를 새로고침합니다...")
             await asyncio.sleep(10)
             await page.reload(wait_until="networkidle")
             
-            # [추가] 2. 범용 입장 버튼 클릭 알고리즘
-            # GoToWebinar 및 일반 웨비나 사이트들의 '참여' 버튼 패턴들
+            # 2. 스마트 클릭 알고리즘 (버튼 탐색)
+            # Gasworld TV 및 각종 웨비나 플랫폼의 버튼 패턴 리스트
             selectors = [
                 "text='웹에서 참여'", "text='Join on the web'", 
-                "text='Listen Only'", "text='무료로 참여'",
-                "button:has-text('Join')", ".join-button"
+                "text='Listen Only'", "button[aria-label='Play']",
+                ".vjs-big-play-button", ".play-button", "text='Watch now'"
             ]
             
+            print("🔍 입장/재생 버튼 탐색 중...")
             for selector in selectors:
                 try:
-                    # 각 버튼을 최대 5초간 찾아보고 있으면 클릭
                     btn = page.locator(selector)
-                    if await btn.is_visible(timeout=5000):
+                    if await btn.is_visible(timeout=3000): # 각 버튼당 3초만 확인
                         await btn.click()
-                        print(f"✅ 입장 버튼 클릭 성공: {selector}")
+                        print(f"✅ 버튼 클릭 성공: {selector}")
                         await asyncio.sleep(3)
                         break
                 except:
                     continue
             
-            # [추가] 3. 오디오 활성화 및 포커스를 위한 화면 중앙 클릭
-            print("🖱️ 화면 중앙을 클릭하여 오디오를 활성화합니다.")
+            # 3. 최후의 수단: 화면 중앙 클릭 (오디오 활성화 및 강제 재생)
+            print("🖱️ 화면 중앙을 클릭하여 최종 확인합니다.")
             await page.mouse.click(427, 240) 
 
-            # 4. 실제 녹화 대기
-            print(f"🎥 녹화 시작... ({duration_min}분 대기)")
+            # 4. 녹화 대기
+            print(f"🎥 녹화 중... ({duration_min}분 대기)")
             await asyncio.sleep(duration_min * 60)
             
         except Exception as e:
             print(f"⚠️ 녹화 도중 에러 발생: {e}")
-            update_db_status(res_id, "error") # 에러 시 즉시 반영
+            update_db_status(res_id, "error")
         
         finally:
             # 브라우저 종료 및 파일 확정
@@ -112,7 +113,7 @@ async def record_webinar(res_id, target_url, duration_min):
             video_path = await page.video.path()
             await browser.close()
             
-            # [Section 4: 마무리 작업]
+            # [Section 4: 마무리 작업 및 Firebase 업로드]
             timestamp = datetime.now().strftime("%Y%m%d_%H%M")
             final_name = f"webinar_{timestamp}.webm"
             
@@ -126,11 +127,9 @@ async def record_webinar(res_id, target_url, duration_min):
                     update_db_status(res_id, "failed")
             else:
                 print("❌ 녹화 파일이 생성되지 않았습니다.")
-                # 이미 에러가 발생했다면 위에서 처리되었겠지만, 안전을 위해 한 번 더 확인
-                current_data = supabase.table("webinar_reservations").select("status").eq("id", res_id).execute()
-                if current_data.data[0]['status'] != 'completed':
-                    update_db_status(res_id, "error")
+                update_db_status(res_id, "error")
 
+# [Section 5: 실행 메인 로직]
 if __name__ == "__main__":
     if len(sys.argv) < 4:
         print("사용법: python main.py [ID] [URL] [DURATION]")
