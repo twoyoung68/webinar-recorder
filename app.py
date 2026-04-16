@@ -110,37 +110,67 @@ with st.container(border=True):
 
 # [Section 4: 실시간 현황 모니터링]
 st.divider()
-st.subheader("📋 실시간 예약 현황")
+st.subheader("📋 실시간 녹화 및 예약 현황")
+
+# 새로고침 버튼을 상단에 배치하여 사용자가 수동으로 상태를 갱신할 수 있게 합니다.
+if st.button("🔄 현황 새로고침", use_container_width=True):
+    st.rerun()
 
 try:
-    response = supabase.table("webinar_reservations").select("*").order("scheduled_at", desc=True).limit(10).execute()
+    # 최신 예약 10개를 가져와서 예약 시간순으로 정렬
+    response = supabase.table("webinar_reservations") \
+        .select("*") \
+        .order("scheduled_at", desc=True) \
+        .limit(10) \
+        .execute()
+    
     items = getattr(response, 'data', response)
     
     if items:
         for item in items:
+            # 개별 항목을 테두리가 있는 박스(container)로 감싸 가독성을 높임
             with st.container(border=True):
                 m1, m2, m3 = st.columns([3, 1, 1])
+                
                 with m1:
-                    st.write(f"🔗 {item.get('webinar_url')}")
+                    # URL 표시
+                    st.write(f"🔗 **{item.get('webinar_url')}**")
+                    
+                    # 시간 변환 (UTC -> KST)
                     raw_ts = item.get('scheduled_at', '')
                     if raw_ts:
+                        # ISO 포맷의 Z(UTC)를 파이썬 타임존 객체로 변환
                         u_dt = datetime.fromisoformat(raw_ts.replace('Z', '+00:00'))
                         k_dt = u_dt.astimezone(KST)
-                        st.caption(f"예약시간(KST): {k_dt.strftime('%Y-%m-%d %H:%M')} | {item.get('duration_min')}분")
+                        st.caption(f"⏰ 시작 시간(KST): {k_dt.strftime('%Y-%m-%d %H:%M')} | ⏳ 녹화 분량: {item.get('duration_min')}분")
+                
                 with m2:
                     st_val = item.get('status')
-                    if st_val == "pending": st.info("📅 대기 중")
-                    elif st_val == "running": st.warning("⏳ 녹화 중")
-                    elif st_val == "completed": st.success("✅ 완료됨")
-                    else: st.write(f"❓ {st_val}")
+                    # 상태별 시각적 피드백 (배지 및 색상 활용)
+                    if st_val == "pending":
+                        st.info("📅 예약 대기 중")
+                    elif st_val == "running":
+                        st.warning("⚡ 실시간 녹화 중") # 주황색으로 강조되어 눈에 잘 띔
+                    elif st_val == "completed":
+                        st.success("✅ 녹화 완료")
+                    elif st_val == "trigger":
+                        st.error("🚀 엔진 가동 중...") # 즉시 실행 버튼 클릭 후 서버 응답 대기 상태
+                    elif st_val == "failed" or st_val == "error":
+                        st.error("❌ 오류 발생")
+                    else:
+                        st.write(f"❓ {st_val}")
+                
                 with m3:
-                    if st.button("취소/삭제", key=f"del_db_{item.get('id')}"):
+                    # 삭제 버튼 (데이터베이스에서 해당 예약 삭제)
+                    if st.button("🗑️ 삭제", key=f"del_db_{item.get('id')}", use_container_width=True):
                         supabase.table("webinar_reservations").delete().eq("id", item.get('id')).execute()
+                        st.toast(f"ID {item.get('id')} 작업이 삭제되었습니다.")
                         st.rerun()
     else:
-        st.caption("대기 중인 예약이 없습니다.")
+        st.info("현재 등록된 예약 내역이 없습니다. 상단에서 새로운 녹화를 예약해 보세요.")
+
 except Exception as e:
-    st.error(f"데이터 로드 실패: {e}")
+    st.error(f"데이터베이스 로드 중 오류가 발생했습니다: {e}")
 
 # [Section 5: 사이드바 복구 (비밀번호 제거)]
 st.sidebar.title("⚙️ 서버 시스템 관리")
