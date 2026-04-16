@@ -41,32 +41,34 @@ def check_and_run():
         print("✅ 현재 실행할 작업이 없습니다.")
         return
 
-    # [Section 3: 발견된 작업 실행 및 상태 업데이트]
+ # [Section 3: 발견된 작업 실행 및 상태 업데이트]
     for job in all_jobs:
         job_id = job['id']
         print(f"🚀 녹화 대상 발견! ID: {job_id}")
         
         try:
-            # [핵심 수정] 1. 실행 전 DB 상태를 'running'으로 먼저 변경 (중복 실행 방지 및 화면 표시용)
+            # 1. DB 상태를 'running'으로 변경
             supabase.table("webinar_reservations") \
                 .update({"status": "running"}) \
                 .eq("id", job_id) \
                 .execute()
             print(f"🔄 ID {job_id} 상태를 'running'으로 변경했습니다.")
 
-            # 2. main.py 실행 (백그라운드 프로세스로 실행)
-            subprocess.Popen([
+            # [수정 포인트] Popen 대신 run을 사용하거나, .wait()를 추가하여 
+            # 녹화가 끝날 때까지 GitHub Actions 세션이 유지되게 합니다.
+            print(f"🎬 녹화 로봇(main.py)을 실행합니다. 녹화 완료까지 대기합니다...")
+            
+            subprocess.run([
                 "python", "main.py", 
                 str(job_id), 
                 job['webinar_url'], 
                 str(job['duration_min'])
-            ])
-            print(f"🎬 녹화 로봇(main.py) 호출 완료!")
+            ], check=True) # 녹화가 끝날 때까지 여기서 기다립니다.
+            
+            print(f"✅ ID {job_id} 녹화 프로세스가 정상적으로 종료되었습니다.")
             
         except Exception as e:
             print(f"❌ 실행 오류 (ID: {job_id}): {e}")
-            # 실패 시 다시 pending으로 돌리거나 error로 표시
             supabase.table("webinar_reservations").update({"status": "error"}).eq("id", job_id).execute()
-
 if __name__ == "__main__":
     check_and_run()
