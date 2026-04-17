@@ -13,23 +13,21 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# [scheduler.py 수정 제안 - 범위 확장 버전]
 def check_and_run():
-    """
-    DB를 조회하여 정시 혹은 곧 시작할 녹화 작업을 찾아 실행합니다.
-    """
     now_utc = datetime.now(pytz.utc)
+    KST = pytz.timezone('Asia/Seoul')
+    now_kst = now_utc.astimezone(KST)
     
-    # [핵심 로직] 정시성 확보를 위한 시간 범위 설정
-    # 1. 과거 2분 전 ~ 미래 12분 후 사이의 pending 작업을 찾습니다.
-    # 2. 10분 주기 순찰이므로, 미래 작업을 미리 잡아 대기하게 함으로써 정각 시작을 보장합니다.
-    start_range = (now_utc - timedelta(minutes=2)).isoformat()
-    end_range = (now_utc + timedelta(minutes=12)).isoformat()
+    # [수정] 종료 범위를 12분에서 15분으로 늘려, 다음 순찰 전의 작업을 여유 있게 잡습니다.
+    start_range = (now_utc - timedelta(minutes=5)).isoformat() # 과거 5분까지 허용
+    end_range = (now_utc + timedelta(minutes=15)).isoformat() # 미래 15분까지 탐색
     
-    print(f"--- 🔍 스케줄러 가동 ({now_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC) ---")
-    print(f"🔎 검색 범위: {start_range} ~ {end_range}")
+    print(f"--- 🔍 스케줄러 가동 (한국 시간: {now_kst.strftime('%H:%M:%S')}) ---")
+    print(f"💡 탐색 예약 시간(KST): {(now_kst - timedelta(minutes=5)).strftime('%H:%M')} ~ {(now_kst + timedelta(minutes=15)).strftime('%H:%M')}")
 
     try:
-        # 대기 중(pending)인 작업 중 범위 내에 있는 것들만 호출
+        # DB에서 pending 상태인 작업을 가져옵니다.
         response = supabase.table("webinar_reservations") \
             .select("*") \
             .eq("status", "pending") \
