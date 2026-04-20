@@ -1,0 +1,6 @@
+
+
+temp_records/
+__pycache__/
+venv/
+*.webm

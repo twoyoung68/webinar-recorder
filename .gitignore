@@ -1,7 +1,0 @@
-.env
-firebase_key.json
-temp_records/
-__pycache__/
-venv/
-*.webm
-temp_firebase_key.json

@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "webinar-recorder",
+  "private_key_id": "89ea86279a36e47960e84f0f633b88b50ed2706d",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCjvG9IDAOi7rj0\nBVmp28blYFfr8JHc3eqU/zJkLjJTLmRX3bRyujWC7Ofd+ah1WbDGcA9FqGr/Wtiu\nctxKIXS+nN2U9Cq0G00wNp+1AXnTXJt6CUCyPwpIxi2xpQfxmp7SckudZhnnQUp3\n2nhcQsTpcaUhiSj0+yHcaEzsjm6Jn/ufuzbdbQQnf2PVyq3LQFHMTRA1wVnudS++\nw1eF6ZtK1mxjhq4Rq+l7qzy5oz1OE0dI/2gB+/hVEIJ0D60kRWhImluThOkcHT0a\nxe2rRcy6wTZJjSGi6WUtvcp8HXxNcgteV9fvCXx7iPgY95CCYbhmAkOs5edfeDry\n1ej1EMFDAgMBAAECggEARZfwlqdgnk6oNzPU9gDvi4wFIsgYP0/lhpnngbQu+LMF\nvGED8yWZXAI01WDpjKNoIxf7LcjVXZ7v7UntvuZ0eBY1ijuzsOTPzJfTDvzHGqLI\nhLjNElYAGYl+X3y9ISButBUXdZmxldzm+YVW1iQdDPocTWI+kc3yCPweAgfSDNVQ\nYvaBI5cRinOaI1HoPGVfBd0DtKH8hdn/+1+ZuJOdl6DwjLjrujzP7EsWWLlN3EHW\nMMFPi9U9AfMB4CaycOSJ7Y8e5QsLmeJa0mlBBr/PqblBBpNDHitlL+gywzo8AUZE\nvvnfMKtQiDraQm1kh0fq63hyqbrIQp0i9HzSseIbfQKBgQDSc8tyDQDt55dC8gGr\nJgIqvJFnPS3tb0RNJbq590ySG/TjZuTebrMefZL51T6wg3QpwKTm5ePWkYzCyH+E\nTUa9E9u0xLCqWT/L2sahYMFbBRdq40ee3hoJkduMYwFGo75AohRHifNvzdsQ4oSz\nGafAPfhsuSNZeXvWKKtN+Ka5vwKBgQDHLE4iO4dLJhN99LfHLUykTfSdv5EXt8sx\nCuoQ6qDIsVGEYF2F63zIR8vR3yvatMdt1Pfk9ykVt9fEleRKiQGXymh4WXqXtJab\nOpCqeko6p6dHWInhUtwJg5AOj+BUA4Q2sQJjvSgWlJ+AiUeCls6ZhmopbJb6iHnH\n3nlye4WxfQKBgH0M7VChxXGX8VuILdGizhrS3Zt40PeK7AzjZGboOYmALy2IkGpT\nYP+3IkRtn8iG89lzbQj+hTmUVw3O0Wat/GCRkjWBwnAWhD//iZOOyJXrGpUa5A3U\nb6hMEScEFVgCKCSDqoUvxYUjzw3ja3J4xiMHL7x67jRWaW1B0TiNjZRFAoGBALBl\n6fFhnYqN93d3lIh/80AVls9biapi6j/ONc2zr6Dvgo3mNw5TqNlM1RRUPmfd8j6w\n/rg3uph0kVGXm2/z9Yg1CN+GCBByLWzfqp6B3loigAGtRbhdBWobritne7uMvb0e\nekpRjj6pdLaHXuEmpWXNaRq1BOZwlsLQo+kjwx2VAoGBAK0VqgOdBQ+25ajO8lid\nhlmofMF49FefhNCvnq3yzLHnwrN2Oy0NUxIgk5Szk1t/XprPTPHq1LAUhe1J3hxE\n1FOewCWtmeMeUCKvRjSMIfMpZ5l1lHao+ov0QLWnCqLk2vPzPXMsAAQMxVSPEEq2\n9uMseznp0RwE6zjGWhQFAHQJ\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-fbsvc@webinar-recorder.iam.gserviceaccount.com",
+  "client_id": "113973984409151820357",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40webinar-recorder.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

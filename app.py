@@ -55,9 +55,7 @@ st.title("🌐 글로벌 세미나 클라우드 녹화 센터")
 st.info("해외 현지 시간을 입력하면 시스템이 자동으로 한국 시간(KST) 및 서버 시간(UTC)으로 변환합니다.")
 
 # [Section 3: 현지 시간 기반 예약]
-st.divider()
-with st.container(border=True):
-    st.subheader("📅 새 녹화 작업 예약")
+
     # [app.py - Section 3 수정본]
 st.divider()
 with st.container(border=True):
@@ -68,7 +66,7 @@ with st.container(border=True):
         <div style="background-color: #ffebee; padding: 10px; border-radius: 5px; border: 1px solid #f44336;">
             <p style="color: #d32f2f; margin: 0; font-weight: bold; font-size: 1.1em;">
                 ⚠️ 필독: 시스템 순찰 주기(10분)로 인해, 실제 세미나 시작 시간보다 
-                <span style="text-decoration: underline;">10분~15분 정도 앞당겨서 예약</span>해 주세요!
+                <span style="text-decoration: underline;"> 5분 정도 앞당겨서 예약</span>해 주세요!
             </p>
             <p style="color: #d32f2f; margin: 5px 0 0 0; font-size: 0.9em;">
                 (예: 3:00 세미나 시작 → 2:45~2:50으로 예약 권장)

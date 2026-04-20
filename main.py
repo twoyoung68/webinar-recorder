@@ -1,154 +1,133 @@
-# [Section 1: 라이브러리 및 설정]
-import asyncio
 import os
-import sys
-import json
 import firebase_admin
 from firebase_admin import credentials, storage
-from playwright.async_api import async_playwright
-from datetime import datetime
 from supabase import create_client
-from dotenv import load_dotenv
+import json
+from datetime import datetime
+import pytz
+from playwright.sync_api import sync_playwright
 
-load_dotenv()
-url = os.getenv("SUPABASE_URL")
-key = os.getenv("SUPABASE_KEY")
-supabase = create_client(url, key)
-
-# --- Firebase 초기화 ---
+# [1. Firebase 인증 로직]
 if not firebase_admin._apps:
     firebase_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
     if firebase_json:
-        with open('temp_firebase_key.json', 'w') as f:
-            f.write(firebase_json)
-        cred = credentials.Certificate('temp_firebase_key.json')
-    else:
-        cred = credentials.Certificate('firebase_key.json')
-
-    firebase_admin.initialize_app(cred, {
-        'storageBucket': 'webinar-recorder.firebasestorage.app'
-    })
-
-# [Section 2: 보조 함수]
-def upload_to_firebase(local_path, file_name):
-    try:
-        bucket = storage.bucket()
-        blob = bucket.blob(file_name)
-        blob.upload_from_filename(local_path)
-        print(f"🚀 Firebase 업로드 성공: {file_name}")
-        return True
-    except Exception as e:
-        print(f"❌ Firebase 업로드 실패: {e}")
-        return False
-
-def update_db_status(res_id, status_text):
-    try:
-        supabase.table("webinar_reservations").update({"status": status_text}).eq("id", res_id).execute()
-        print(f"🔄 DB 상태 변경 완료: {status_text}")
-    except Exception as e:
-        print(f"⚠️ DB 상태 업데이트 실패: {e}")
-
-# [Section 3: 녹화 수행 엔진 (스마트 클릭 로직 포함)]
-async def record_webinar(res_id, target_url, duration_min):
-    update_db_status(res_id, "running")
-    
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        
-        # [해상도 최적화] 기존 대비 절반 이하로 낮추어 용량과 부하를 줄입니다.
-        # 640x360은 16:9 비율을 유지하면서도 매우 가벼운 설정입니다.
-        context = await browser.new_context(
-            viewport={'width': 640, 'height': 360},
-            record_video_dir="temp_records/",
-            record_video_size={'width': 640, 'height': 360},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        )
-        
-        page = await context.new_page()
-        
         try:
-            print(f"🔗 세미나 접속 시도: {target_url}")
-            # 네트워크가 안정될 때까지 최대 90초 대기
-            await page.goto(target_url, timeout=90000, wait_until="networkidle")
-            
-            # 1. 입장 전 새로고침 (세션 활성화 및 대기화면 탈출)
-            print("⏳ 10초 대기 후 페이지를 새로고침합니다...")
-            await asyncio.sleep(10)
-            await page.reload(wait_until="networkidle")
-            
-            
-
-            # 1. 유연한 매칭을 위한 키워드 리스트
-            # 'has-text'를 사용하면 해당 문구가 포함만 되어 있어도 찾습니다.
-            flexible_selectors = [
-                "button:has-text('Join')",             # 'Join'이 들어간 모든 버튼
-                "button:has-text('browser')",          # 브라우저에서 계속하기 등
-                "button:has-text('web')",              # 웹에서 참여 등
-                "button:has-text('Watch')",            # 시청하기 관련
-                "button:has-text('시작')",             # 한국어 대응
-                "button:has-text('참여')",             # 한국어 대응
-                ".vjs-big-play-button",                # 비디오 플레이어 버튼 (클래스명)
-                "button[aria-label*='Play']"           # Play 단어가 포함된 레이블
-            ]
-            
-            print("🔍 지능형 버튼 탐색 시작...")
-            for selector in flexible_selectors:
-                try:
-                    # 해당 키워드를 가진 요소가 화면에 나타날 때까지 최대 5초 대기
-                    target = page.locator(selector).first # 여러 개면 첫 번째 것
-                    if await target.is_visible(timeout=5000):
-                        await target.click()
-                        print(f"🎯 매칭 성공 및 클릭: {selector}")
-                        await asyncio.sleep(5)
-                        break
-                except:
-                    continue
-            
-            # 3. 최후의 수단: 화면 중앙 클릭 (오디오 활성화 및 강제 재생)
-            print("🖱️ 화면 중앙을 클릭하여 최종 확인합니다.")
-            await page.mouse.click(427, 240) 
-
-            # 4. 녹화 대기
-            print(f"🎥 녹화 중... ({duration_min}분 대기)")
-            await asyncio.sleep(duration_min * 60)
-            
+            info = json.loads(firebase_json, strict=False)
+            cred = credentials.Certificate(info)
+            print("✅ Firebase: 환경 변수를 통해 인증되었습니다.")
         except Exception as e:
-            print(f"⚠️ 녹화 도중 에러 발생: {e}")
-            update_db_status(res_id, "error")
-        
-        finally:
-            # 브라우저 종료 및 파일 확정
-            await context.close()
-            video_path = await page.video.path()
-            await browser.close()
-            
-            # [Section 4: 마무리 작업 및 Firebase 업로드]
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-            final_name = f"webinar_{timestamp}.webm"
-            
-            if video_path and os.path.exists(video_path):
-                success = upload_to_firebase(video_path, final_name)
-                if success:
-                    update_db_status(res_id, "completed")
-                    if os.path.exists(video_path):
-                        os.remove(video_path)
-                else:
-                    update_db_status(res_id, "failed")
-            else:
-                print("❌ 녹화 파일이 생성되지 않았습니다.")
-                update_db_status(res_id, "error")
-
-# [Section 5: 실행 메인 로직]
-if __name__ == "__main__":
-    if len(sys.argv) < 4:
-        print("사용법: python main.py [ID] [URL] [DURATION]")
-        sys.exit(1)
-        
-    res_id = sys.argv[1]
-    target_url = sys.argv[2]
-    target_duration = int(sys.argv[3])
+            print(f"❌ Firebase: 환경 변수 파싱 실패: {e}")
+            cred = None
+    else:
+        # 환경 변수가 없으면 로컬 파일 확인
+        json_path = os.path.join(os.path.dirname(__file__), 'firebase_key.json')
+        if os.path.exists(json_path):
+            cred = credentials.Certificate(json_path)
+            print("✅ Firebase: firebase_key.json 파일을 통해 인증되었습니다.")
+        else:
+            print("⚠️ Firebase: 인증 정보(환경 변수 또는 파일)를 찾을 수 없습니다.")
+            cred = None
     
-    if not os.path.exists("temp_records"):
-        os.makedirs("temp_records")
+    if cred:
+        firebase_admin.initialize_app(cred, {
+            'storageBucket': 'webinar-recorder.firebasestorage.app'
+        })
+
+# [2. Supabase 설정 및 방어적 로드]
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_KEY")
+
+supabase = None
+if not supabase_url or not supabase_key:
+    print("❌ 에러: Supabase 환경 변수가 누락되었습니다!")
+    print(f"   - SUPABASE_URL: {'O' if supabase_url else 'X (Missing)'}")
+    print(f"   - SUPABASE_KEY: {'O' if supabase_key else 'X (Missing)'}")
+else:
+    try:
+        supabase = create_client(supabase_url, supabase_key)
+        print("✅ Supabase: 클라이언트 생성 성공")
+    except Exception as e:
+        print(f"❌ Supabase: 연결 중 오류 발생: {e}")
+
+# Firebase Storage 버킷 참조
+bucket = storage.bucket()
+
+def run_recorder():
+    # 시동 전 체크
+    if supabase is None:
+        print("🛑 Supabase 클라이언트가 설정되지 않아 작업을 중단합니다.")
+        return
+
+    print("🔎 녹화 대상 확인 중...")
+    now_utc = datetime.now(pytz.utc).isoformat()
+    
+    try:
+        # Supabase에서 예약된 작업 가져오기
+        res = supabase.table("webinar_reservations")\
+            .select("*")\
+            .lt("scheduled_at", now_utc)\
+            .in_("status", ["pending", "trigger"])\
+            .execute()
         
-    asyncio.run(record_webinar(res_id, target_url, target_duration))
+        jobs = res.data
+        if not jobs:
+            print("✅ 현재 실행할 예약 작업이 없습니다.")
+            return
+
+        for job in jobs:
+            job_id = job['id']
+            url = job['webinar_url']
+            duration = job['duration_min']
+            
+            print(f"🎬 녹화 시작: {url} ({duration}분)")
+            # 상태 업데이트: running
+            supabase.table("webinar_reservations").update({"status": "running"}).eq("id", job_id).execute()
+            
+            # 영상 파일명 정의
+            filename = f"webinar_{job_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.webm"
+            video_dir = "/tmp/videos" # Cloud Run은 /tmp 폴더에만 쓰기 권한이 있음
+            if not os.path.exists(video_dir):
+                os.makedirs(video_dir)
+
+            try:
+                with sync_playwright() as p:
+                    # 사내 보안망 고려하여 브라우저 실행 옵션 최적화
+                    browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
+                    context = browser.new_context(record_video_dir=video_dir)
+                    page = context.new_page()
+                    page.goto(url, wait_until="networkidle")
+                    
+                    # 지정된 시간 동안 녹화 대기
+                    page.wait_for_timeout(duration * 60 * 1000)
+                    browser.close()
+                
+                # 생성된 비디오 파일 찾기
+                video_files = os.listdir(video_dir)
+                if video_files:
+                    local_video_path = os.path.join(video_dir, video_files[0])
+                    
+                    # Firebase Storage 업로드
+                    blob = bucket.blob(f"recordings/{filename}")
+                    blob.upload_from_filename(local_video_path)
+                    print(f"✅ Firebase 업로드 완료: recordings/{filename}")
+                    
+                    # Supabase 완료 처리
+                    supabase.table("webinar_reservations").update({
+                        "status": "completed",
+                        "video_url": blob.public_url
+                    }).eq("id", job_id).execute()
+                    
+                    # 임시 파일 삭제
+                    os.remove(local_video_path)
+                else:
+                    raise Exception("비디오 파일이 생성되지 않았습니다.")
+                    
+            except Exception as e:
+                print(f"❌ 녹화 중 오류 발생: {e}")
+                supabase.table("webinar_reservations").update({"status": "error"}).eq("id", job_id).execute()
+
+    except Exception as e:
+        print(f"❌ 데이터베이스 조회 중 오류 발생: {e}")
+
+if __name__ == "__main__":
+    run_recorder()
