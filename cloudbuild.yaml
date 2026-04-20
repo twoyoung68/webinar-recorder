@@ -1,13 +1,14 @@
 steps:
-  # 1. 이전 빌드 캐시를 활용해 속도를 높입니다.
+  # [1단계] Docker 이미지를 빌드합니다.
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '--cache-from', 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/webinar-recorder', '-t', 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/webinar-recorder', '.']
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/webinar-recorder', '.']
 
-  # 2. 이미지를 저장소에 푸시
+  # [2단계] 빌드된 이미지를 구글 컨테이너 저장소(GCR)에 저장합니다.
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/webinar-recorder']
+    args: ['push', 'gcr.io/$PROJECT_ID/webinar-recorder']
 
-  # 3. Cloud Run에 배포 (env.yaml의 환경 변수를 자동 적용)
+  # [3단계] Cloud Run에 서비스를 배포합니다.
+  # 보안을 위해 --env-vars-file env.yaml 부분은 완전히 삭제했습니다.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -15,15 +16,13 @@ steps:
       - 'deploy'
       - 'webinar-recorder'
       - '--image'
-      - 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/webinar-recorder'
+      - 'gcr.io/$PROJECT_ID/webinar-recorder'
       - '--region'
       - 'asia-northeast3'
-      - '--env-vars-file'
-      - 'env.yaml'  # 미리 만들어두신 env.yaml을 사용합니다.
+      - '--platform'
+      - 'managed'
       - '--allow-unauthenticated'
-      # 기존 내용들... (steps 등)
 
-# 아래 내용을 맨 밑에 추가하세요. (들여쓰기 주의!)
+# 빌드 기록(로그) 에러를 방지하기 위한 설정입니다.
 options:
   logging: CLOUD_LOGGING_ONLY
-  
