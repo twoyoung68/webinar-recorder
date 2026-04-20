@@ -1,5 +1,6 @@
 # 1. 보안 관련 파일 (절대 업로드 금지)
 .env
+env.yaml
 firebase_key.json
 *.json
 !requirements.json # 만약 필요한 json이 있다면 제외(현재는 불필요)

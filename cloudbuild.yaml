@@ -1,14 +1,13 @@
 steps:
-  # [1단계] Docker 이미지를 빌드합니다.
+  # [1단계] Docker 이미지 빌드
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', 'gcr.io/$PROJECT_ID/webinar-recorder', '.']
 
-  # [2단계] 빌드된 이미지를 구글 컨테이너 저장소(GCR)에 저장합니다.
+  # [2단계] 이미지 푸시
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/webinar-recorder']
 
-  # [3단계] Cloud Run에 서비스를 배포합니다.
-  # 보안을 위해 --env-vars-file env.yaml 부분은 완전히 삭제했습니다.
+  # [3단계] Cloud Run 배포 (Secret Manager와 직접 연동)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -21,8 +20,11 @@ steps:
       - 'asia-northeast3'
       - '--platform'
       - 'managed'
+      # 아래 설정을 통해 Secret Manager의 값을 환경 변수로 자동 매핑합니다.
+      # 형식: 환경변수명=시크릿이름:버전
+      - '--set-secrets'
+      - 'FIREBASE_KEY=FIREBASE_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest'
       - '--allow-unauthenticated'
 
-# 빌드 기록(로그) 에러를 방지하기 위한 설정입니다.
 options:
   logging: CLOUD_LOGGING_ONLY
