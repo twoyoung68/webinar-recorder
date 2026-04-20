@@ -1,0 +1,25 @@
+# 1. 보안 관련 파일 (절대 업로드 금지)
+.env
+firebase_key.json
+*.json
+!requirements.json # 만약 필요한 json이 있다면 제외(현재는 불필요)
+
+# 2. 파이썬 임시 파일
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# 3. 로컬 테스트용 녹화 파일 및 폴더
+recordings/
+temp_records/
+*.webm
+*.mp4
+
+# 4. 기타 도구 및 운영체제 임시 파일
+.DS_Store
+.vscode/
+.idea/
+temp_gitignore
