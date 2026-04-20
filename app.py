@@ -11,34 +11,46 @@ from supabase import create_client, Client
 st.set_page_config(page_title="Plant TI Webinar Recorder", page_icon="🎥", layout="wide")
 
 # --- 2. 보안 인증 및 클라이언트 설정 (핵심!) ---
-@st.cache_resource
-def init_connection():
-    # A. 구글 클라우드(Firebase Storage) 인증
-    if "FIREBASE_KEY" in st.secrets:
-        # 웹 배포 환경: Secrets에서 읽기
-        key_dict = json.loads(st.secrets["FIREBASE_KEY"])
-        creds = service_account.Credentials.from_service_account_info(key_dict)
-    else:
-        # 로컬 개발 환경: 파일에서 읽기
-        creds = service_account.Credentials.from_service_account_file('firebase_key.json')
-    
-    storage_client = storage.Client(credentials=creds, project=creds.project_id)
-    
-    # B. Supabase 연결 (Secrets 사용)
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    supabase_client = create_client(url, key)
-    
-    return storage_client, supabase_client
+import streamlit as st
+import json
+import os
+from google.oauth2 import service_account
+from google.cloud import storage
 
+# --- [강력한 인증 로직] ---
+@st.cache_resource
+def init_all_connections():
+    creds = None
+    
+    # 우선순위 1: Streamlit Secrets (웹 배포용)
+    if "FIREBASE_KEY" in st.secrets:
+        try:
+            key_dict = json.loads(st.secrets["FIREBASE_KEY"])
+            creds = service_account.Credentials.from_service_account_info(key_dict)
+        except Exception as e:
+            st.error(f"Secrets 읽기 실패: {e}")
+    
+    # 우선순위 2: 로컬 파일 (내 노트북 테스트용)
+    # 파일이 실제로 존재할 때만 시도하도록 os.path.exists 사용
+    elif os.path.exists('firebase_key.json'):
+        try:
+            creds = service_account.Credentials.from_service_account_file('firebase_key.json')
+        except Exception as e:
+            st.error(f"로컬 파일 읽기 실패: {e}")
+
+    # 최종 체크: 둘 다 없으면 중단
+    if creds is None:
+        st.error("보안 키(Secrets 또는 JSON 파일)가 없습니다. 설정을 확인해 주세요.")
+        st.stop()
+        
+    return storage.Client(credentials=creds, project=creds.project_id)
+
+# 실행
 try:
-    storage_client, supabase = init_connection()
-    # 버킷 이름은 사용자님의 Firebase 설정에 맞게 수정하세요.
-    bucket_name = "webinar-recorder.firebasestorage.app" 
-    bucket = storage_client.bucket(bucket_name)
+    storage_client = init_all_connections()
+    bucket = storage_client.bucket("webinar-recorder-plant-titeam.appspot.com")
 except Exception as e:
-    st.error(f"연결 실패: {e}")
-    st.stop()
+    st.error(f"최종 연결 오류: {e}")
 
 # --- 3. UI 구성 (사이드바) ---
 st.sidebar.title("메뉴")
