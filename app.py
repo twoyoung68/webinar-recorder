@@ -22,32 +22,63 @@ WORLD_ZONES = {
     "베트남 (ICT)": "Asia/Ho_Chi_Minh"
 }
 
+
+
 # --- 2. 보안 인증 및 클라이언트 설정 ---
 @st.cache_resource
 def init_all_connections():
     creds = None
-    if "FIREBASE_KEY" in st.secrets:
+    
+    # 1. Firebase/Google Cloud 인증 정보 가져오기
+    # 구글 클라우드 환경변수(FIREBASE_SERVICE_ACCOUNT 또는 FIREBASE_KEY)를 먼저 확인합니다.
+    firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT") or os.environ.get("FIREBASE_KEY")
+    
+    if firebase_json:
+        try:
+            # 환경변수에 저장된 JSON 문자열을 딕셔너리로 변환
+            key_dict = json.loads(firebase_json)
+            creds = service_account.Credentials.from_service_account_info(key_dict)
+        except Exception as e:
+            st.error(f"환경변수 인증 로드 실패: {e}")
+            
+    # 환경변수에 없으면 기존처럼 st.secrets 확인 (로컬 또는 Streamlit Cloud용)
+    if creds is None and "FIREBASE_KEY" in st.secrets:
         try:
             key_dict = json.loads(st.secrets["FIREBASE_KEY"])
             creds = service_account.Credentials.from_service_account_info(key_dict)
         except Exception as e:
             st.error(f"Secrets 인증 로드 실패: {e}")
-    elif os.path.exists('firebase_key.json'):
+            
+    # 로컬 파일 확인 (파일이 실제로 있을 경우)
+    elif creds is None and os.path.exists('firebase_key.json'):
         try:
             creds = service_account.Credentials.from_service_account_file('firebase_key.json')
         except Exception as e:
             st.error(f"로컬 파일 인증 로드 실패: {e}")
 
     if creds is None:
-        st.error("보안 키가 없습니다.")
+        st.error("보안 키를 찾을 수 없습니다. 구글 클라우드 콘솔의 환경 변수 설정을 확인해주세요.")
         st.stop()
         
+    # 2. Supabase 설정 정보 가져오기
+    # 환경변수에서 먼저 찾고, 없으면 st.secrets에서 찾습니다.
+    supabase_url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY")
+    
+    if not supabase_url or not supabase_key:
+        st.error("Supabase 설정 정보(URL/KEY)가 없습니다.")
+        st.stop()
+
+    # 클라이언트 생성
     storage_client = storage.Client(credentials=creds, project=creds.project_id)
-    supabase_client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+    supabase_client = create_client(supabase_url, supabase_key)
     
     return storage_client, supabase_client
 
+# 연결 초기화
 storage_client, supabase = init_all_connections()
+
+# 버킷 설정
 bucket_name = "webinar-recorder-plant-titeam.appspot.com"
 bucket = storage_client.bucket(bucket_name)
 
@@ -159,4 +190,3 @@ elif menu == "⚙️ 시스템 상태":
     with col2:
         st.metric("Storage Status", "Connected", "Firebase")
     st.info("자동 녹화 봇은 Google Cloud Run 환경에서 작동 중입니다.")
-    
