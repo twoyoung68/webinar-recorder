@@ -1,5 +1,17 @@
-.git
-.venv
-__pycache__
-*.pyc
+# 구글 클라우드 배포 시 제외할 파일들
 .env
+firebase_key.json
+*.json
+!requirements.json
+
+# 파이썬 임시 파일
+__pycache__/
+*.pyc
+
+# 깃 관련 파일
+.git
+.gitignore
+
+# 로컬 테스트용 폴더
+recordings/
+temp_records/
