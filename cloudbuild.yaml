@@ -21,3 +21,9 @@ steps:
       - '--env-vars-file'
       - 'env.yaml'  # 미리 만들어두신 env.yaml을 사용합니다.
       - '--allow-unauthenticated'
+      # 기존 내용들... (steps 등)
+
+# 아래 내용을 맨 밑에 추가하세요. (들여쓰기 주의!)
+options:
+  logging: CLOUD_LOGGING_ONLY
+  
