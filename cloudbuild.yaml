@@ -1,0 +1,23 @@
+steps:
+  # 1. 이전 빌드 캐시를 활용해 속도를 높입니다.
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '--cache-from', 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/webinar-recorder', '-t', 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/webinar-recorder', '.']
+
+  # 2. 이미지를 저장소에 푸시
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/webinar-recorder']
+
+  # 3. Cloud Run에 배포 (env.yaml의 환경 변수를 자동 적용)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'webinar-recorder'
+      - '--image'
+      - 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/webinar-recorder'
+      - '--region'
+      - 'asia-northeast3'
+      - '--env-vars-file'
+      - 'env.yaml'  # 미리 만들어두신 env.yaml을 사용합니다.
+      - '--allow-unauthenticated'

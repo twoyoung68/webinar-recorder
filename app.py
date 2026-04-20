@@ -159,3 +159,4 @@ elif menu == "⚙️ 시스템 상태":
     with col2:
         st.metric("Storage Status", "Connected", "Firebase")
     st.info("자동 녹화 봇은 Google Cloud Run 환경에서 작동 중입니다.")
+    

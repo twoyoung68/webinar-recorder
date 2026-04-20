@@ -1,19 +1,18 @@
-# 1. '완제품' 이미지를 사용 (외부 다운로드 최소화)
-FROM mcr.microsoft.com/playwright/python:v1.42.0-jammy
+# 1. 파이썬 3.11 슬림 버전 사용 (빌드 속도 향상)
+FROM python:3.11-slim
 
+# 2. 작업 디렉토리 설정
 WORKDIR /app
 
-# 2. 캐시를 활용하여 라이브러리 설치 (실패 시 여기서 멈추게 함)
+# 3. 필수 파일 복사 및 라이브러리 설치
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt || exit 1
+RUN pip install --no-cache-dir -r requirements.txt
 
-# 3. 브라우저 설치 (install-deps 생략, 이미 들어있음)
-RUN playwright install chromium || exit 1
-
-# 4. 코드 복사 (가장 마지막에 수행)
+# 4. 나머지 소스 코드 복사
 COPY . .
 
-# 5. 구글 클라우드 규격 고정
-ENV PORT 8080
+# 5. 포트 설정 (Cloud Run은 반드시 8080)
 EXPOSE 8080
-CMD ["python", "server.py"]
+
+# 6. Streamlit 실행 (0.0.0.0 주소와 8080 포트 고정)
+CMD ["streamlit", "run", "app.py", "--server.port", "8080", "--server.address", "0.0.0.0"]
