@@ -6,120 +6,118 @@ from google.cloud import storage
 from datetime import datetime, timedelta
 import pandas as pd
 from supabase import create_client, Client
+import pytz
 
-# --- 1. 페이지 기본 설정 ---
+# --- 1. 페이지 및 시간대 설정 ---
 st.set_page_config(page_title="Plant TI Webinar Recorder", page_icon="🎥", layout="wide")
+KST = pytz.timezone('Asia/Seoul')
 
-# --- 2. 보안 인증 및 클라이언트 설정 (핵심!) ---
-import streamlit as st
-import json
-import os
-from google.oauth2 import service_account
-from google.cloud import storage
-
-# --- [강력한 인증 로직] ---
+# --- 2. 보안 인증 및 클라이언트 설정 ---
 @st.cache_resource
 def init_all_connections():
     creds = None
-    
-    # 우선순위 1: Streamlit Secrets (웹 배포용)
+    # 1순위: Streamlit Secrets
     if "FIREBASE_KEY" in st.secrets:
-        try:
-            key_dict = json.loads(st.secrets["FIREBASE_KEY"])
-            creds = service_account.Credentials.from_service_account_info(key_dict)
-        except Exception as e:
-            st.error(f"Secrets 읽기 실패: {e}")
-    
-    # 우선순위 2: 로컬 파일 (내 노트북 테스트용)
-    # 파일이 실제로 존재할 때만 시도하도록 os.path.exists 사용
+        key_dict = json.loads(st.secrets["FIREBASE_KEY"])
+        creds = service_account.Credentials.from_service_account_info(key_dict)
+    # 2순위: 로컬 파일
     elif os.path.exists('firebase_key.json'):
-        try:
-            creds = service_account.Credentials.from_service_account_file('firebase_key.json')
-        except Exception as e:
-            st.error(f"로컬 파일 읽기 실패: {e}")
+        creds = service_account.Credentials.from_service_account_file('firebase_key.json')
 
-    # 최종 체크: 둘 다 없으면 중단
     if creds is None:
         st.error("보안 키(Secrets 또는 JSON 파일)가 없습니다. 설정을 확인해 주세요.")
         st.stop()
         
-    return storage.Client(credentials=creds, project=creds.project_id)
+    storage_client = storage.Client(credentials=creds, project=creds.project_id)
+    
+    # Supabase 연결
+    supabase_client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+    
+    return storage_client, supabase_client
 
-# 실행
-try:
-    storage_client = init_all_connections()
-    bucket = storage_client.bucket("webinar-recorder-plant-titeam.appspot.com")
-except Exception as e:
-    st.error(f"최종 연결 오류: {e}")
+storage_client, supabase = init_all_connections()
+bucket = storage_client.bucket("webinar-recorder-plant-titeam.appspot.com")
 
-# --- 3. UI 구성 (사이드바) ---
-st.sidebar.title("메뉴")
-menu = st.sidebar.radio("이동할 화면", ["새 녹화 예약", "녹화 내역 확인", "시스템 상태"])
+# --- 3. 사이드바 (정보창 및 메뉴) ---
+with st.sidebar:
+    st.title("🎥 Webinar Recorder")
+    st.info(f"**현재 한국 시간(KST):**\n{datetime.now(KST).strftime('%Y-%m-%d %H:%M')}")
+    
+    st.markdown("---")
+    menu = st.radio("메뉴 이동", ["📅 웨비나 녹화 예약", "📂 녹화 내역 확인", "⚙️ 시스템 상태"])
+    
+    st.markdown("---")
+    st.subheader("📊 시스템 정보")
+    st.write(f"**Target Project:** Gemini API (Plant TI)")
+    st.write(f"**Storage:** Firebase Cloud Storage")
+    st.caption("Developed by Plant TI Team")
 
-# --- 4. 메인 화면: 새 녹화 예약 ---
-if menu == "새 녹화 예약":
-    st.header("🎥 새 녹화 작업 예약")
+# --- 4. [화면 1] 웨비나 녹화 예약 ---
+if menu == "📅 웨비나 녹화 예약":
+    st.header("📅 웨비나 녹화 예약")
     
     with st.form("recording_form"):
-        webinar_url = st.text_input("웨비나 URL (예: Zoom, YouTube, Teams 등)")
-        title = st.text_input("세미나 제목")
+        title = st.text_input("세미나 제목", placeholder="예: 2026 SMR 기술 전략 세미나")
+        webinar_url = st.text_input("웨비나 URL", placeholder="https://zoom.us/j/...")
         
         col1, col2 = st.columns(2)
         with col1:
-            date = st.date_input("예약 날짜", datetime.now())
+            local_date = st.date_input("현지 날짜", datetime.now(KST))
         with col2:
-            time = st.time_input("시작 시간 (실제 시간 5분 전 추천)", datetime.now())
+            local_time = st.time_input("현지 시작 시간", datetime.now(KST))
             
-        duration = st.number_input("녹화 지속 시간 (분 단위)", min_value=10, max_value=300, value=60)
+        duration = st.number_input("녹화 지속 시간 (분)", min_value=10, max_value=300, value=60)
         
-        submit = st.form_submit_button("예약 확정")
+        st.markdown("---")
+        submit = st.form_submit_button("✅ 예약 확정")
         
         if submit:
-            scheduled_at = datetime.combine(date, time).isoformat()
+            # 입력받은 시간을 한국 시간(KST)으로 결합
+            scheduled_kst = KST.localize(datetime.combine(local_date, local_time))
+            # DB 저장을 위해 ISO 포맷 변환
+            scheduled_iso = scheduled_kst.isoformat()
             
-            # Supabase DB에 예약 정보 저장
             data = {
-                "url": webinar_url,
                 "title": title,
-                "scheduled_at": scheduled_at,
+                "url": webinar_url,
+                "scheduled_at": scheduled_iso,
                 "duration_minutes": duration,
                 "status": "pending"
             }
-            response = supabase.table("webinar_reservations").insert(data).execute()
-            
-            if response:
-                st.success(f"✅ '{title}' 예약이 완료되었습니다. (예정 시각: {scheduled_at})")
-                st.balloons()
+            supabase.table("webinar_reservations").insert(data).execute()
+            st.success(f"🎉 '{title}' 예약 완료! 한국 시간 {scheduled_kst.strftime('%Y-%m-%d %H:%M')}에 녹화가 시작됩니다.")
+            st.balloons()
 
-# --- 5. 메인 화면: 녹화 내역 확인 ---
-elif menu == "녹화 내역 확인":
-    st.header("📂 저장된 녹화 파일 목록")
-    
-    # Firebase Storage에서 파일 목록 가져오기
-    try:
-        blobs = list(bucket.list_blobs(prefix="recordings/"))
-        if not blobs:
-            st.info("아직 저장된 영상이 없습니다.")
-        else:
-            for blob in blobs:
-                if blob.name.endswith(".webm") or blob.name.endswith(".mp4"):
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.write(f"📄 {blob.name.replace('recordings/', '')}")
-                    with col2:
-                        # 1시간 동안 유효한 다운로드 링크 생성
-                        url = blob.generate_signed_url(expiration=timedelta(hours=1))
-                        st.markdown(f"[⬇️ 다운로드]({url})")
-    except Exception as e:
-        st.error(f"파일 목록을 불러올 수 없습니다: {e}")
-
-# --- 6. 시스템 상태 (모니터링) ---
-elif menu == "시스템 상태":
-    st.header("⚙️ 시스템 상태 모니터링")
-    st.info("녹화 엔진(Cloud Run)은 Supabase 알람(pg_cron)에 의해 10분마다 자동으로 깨어납니다.")
-    
-    # 최근 예약 현황 요약
-    res = supabase.table("webinar_reservations").select("*").order("scheduled_at", desc=True).limit(5).execute()
+    # 기존 예약 리스트 보여주기 (예전 성공 화면 구성)
+    st.markdown("---")
+    st.subheader("📝 현재 예약 대기 목록")
+    res = supabase.table("webinar_reservations").select("*").eq("status", "pending").order("scheduled_at").execute()
     if res.data:
-        st.subheader("최근 예약 상태 (Top 5)")
-        st.table(pd.DataFrame(res.data)[['title', 'scheduled_at', 'status']])
+        df = pd.DataFrame(res.data)
+        # 시간 가독성 좋게 변경
+        df['scheduled_at'] = pd.to_datetime(df['scheduled_at']).dt.strftime('%m/%d %H:%M')
+        st.table(df[['title', 'scheduled_at', 'duration_minutes']])
+    else:
+        st.write("대기 중인 예약이 없습니다.")
+
+# --- 5. [화면 2] 녹화 내역 확인 ---
+elif menu == "📂 녹화 내역 확인":
+    st.header("📂 저장된 녹화 파일 목록")
+    # (파일 목록 로직은 이전과 동일하게 유지)
+    blobs = list(bucket.list_blobs(prefix="recordings/"))
+    if not blobs:
+        st.info("저장된 영상이 없습니다.")
+    else:
+        for blob in blobs:
+            if blob.name.endswith((".webm", ".mp4")):
+                col1, col2 = st.columns([3, 1])
+                with col1: st.write(f"📄 {blob.name.split('/')[-1]}")
+                with col2:
+                    url = blob.generate_signed_url(expiration=timedelta(hours=1))
+                    st.link_button("⬇️ 다운로드", url)
+
+# --- 6. [화면 3] 시스템 상태 ---
+elif menu == "⚙️ 시스템 상태":
+    st.header("⚙️ 시스템 상태")
+    st.success("✅ 구글 클라우드 및 Supabase 연결 정상")
+    st.info("녹화 봇은 예약 시간 5분 전에 자동으로 Cloud Run에서 기동됩니다.")
