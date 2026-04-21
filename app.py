@@ -81,112 +81,116 @@ with st.sidebar:
     st.markdown("---")
     menu = st.radio("메뉴 이동", ["📅 웨비나 녹화 예약", "📂 녹화 내역 확인", "⚙️ 시스템 상태"])
 
-# --- 4. [화면 1] 웨비나 녹화 예약 ---
+# --- 4. [화면 1] 웨비나 녹화 예약 및 관리 ---
 if menu == "📅 웨비나 녹화 예약":
-    st.header("📅 글로벌 웨비나 녹화 예약")
+    st.header("📅 글로벌 웨비나 녹화 통합 관리")
 
-    # 세션 상태에 입력 중인 시간 고정 (엔터 시 시간이 바뀌는 것 방지)
+    # [1] 시간 고정 로직 (입력 중 리프레시 방지)
     if 'fixed_now' not in st.session_state:
         st.session_state.fixed_now = datetime.now(KST)
 
+    # --- 예약 입력 구역 ---
     with st.form("recording_form", clear_on_submit=False):
         st.markdown("### 📝 1. 웨비나 정보 입력")
         webinar_title = st.text_input("웨비나 명칭", placeholder="예: 수소 에너지 세미나")
         webinar_url = st.text_input("웨비나 URL", placeholder="https://...")
         
-        st.markdown("### 🕒 2. 녹화 일정 설정 (웨비나 개최지 기준)")
+        st.markdown("### 🕒 2. 녹화 일정 설정 (개최지 기준)")
         selected_zone_name = st.selectbox("웨비나 개최 지역 (타임존)", list(WORLD_ZONES.keys()))
         selected_timezone = pytz.timezone(WORLD_ZONES[selected_zone_name])
         
-        # 개최지 기준의 현재 시각 계산 (안내용)
         now_at_location = st.session_state.fixed_now.astimezone(selected_timezone)
-        st.caption(f"📍 현재 {selected_zone_name} 현지 시각은 **{now_at_location.strftime('%Y-%m-%d %H:%M')}** 입니다.")
+        st.caption(f"📍 현재 {selected_zone_name} 현지 시각: **{now_at_location.strftime('%Y-%m-%d %H:%M')}**")
 
         col1, col2 = st.columns(2)
         with col1:
-            local_date = st.date_input("녹화 시작 날짜 (개최지 기준)", now_at_location.date())
+            local_date = st.date_input("녹화 시작 날짜", now_at_location.date())
         with col2:
-            # 기본값을 현재보다 1시간 뒤로 설정
-            local_time = st.time_input("녹화 시작 시각 (개최지 기준)", (now_at_location + timedelta(hours=1)).time(), step=60)
+            local_time = st.time_input("녹화 시작 시각", (now_at_location + timedelta(hours=1)).time(), step=60)
         
         duration = st.number_input("녹화 지속 시간 (분)", min_value=1, value=60, step=1)
         
         st.write("")
-        # [안전장치] 체크박스를 눌러야만 예약 가능
-        confirm_check = st.checkbox("입력한 '개최지 기준 시각'과 정보가 정확함을 확인했습니다.")
-        
-        submit = st.form_submit_button("✅ 예약 확정 (클릭 시에만 저장됨)")
+        confirm_check = st.checkbox("입력한 정보가 정확함을 확인했습니다.")
+        submit = st.form_submit_button("🚀 예약 확정")
         
         if submit:
             if not confirm_check:
-                st.warning("⚠️ 예약 확정을 위해 위 '확인했습니다' 체크박스를 먼저 클릭해 주세요.")
+                st.warning("⚠️ 확인 체크박스를 먼저 클릭해 주세요.")
             elif not webinar_title or not webinar_url:
                 st.error("⚠️ 명칭과 URL을 모두 입력해 주세요.")
             else:
-                # 사용자가 선택한 개최지의 날짜/시간 객체 생성
                 chosen_dt = selected_timezone.localize(datetime.combine(local_date, local_time))
-                
-                # 과거 예약 방지
                 if chosen_dt.astimezone(KST) < datetime.now(KST):
-                    st.error("📍 현재보다 과거 시각으로는 예약할 수 없습니다. 시간을 다시 확인해 주세요.")
+                    st.error("📍 과거 시각으로는 예약할 수 없습니다.")
                 else:
                     data = {
-                        "title": webinar_title,
-                        "webinar_url": webinar_url,
-                        "scheduled_at": chosen_dt.isoformat(),
-                        "duration_min": duration,
-                        "status": "pending",
-                        "timezone_name": selected_zone_name # [추가] 선택한 지역 이름을 저장
+                        "title": webinar_title, "webinar_url": webinar_url,
+                        "scheduled_at": chosen_dt.isoformat(), "duration_min": duration,
+                        "status": "pending", "timezone_name": selected_zone_name
                     }
                     try:
                         supabase.table("webinar_reservations").insert(data).execute()
-                        st.success(f"🎉 '{webinar_title}' 예약 완료!")
+                        st.success(f"✅ '{webinar_title}' 예약 완료!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"DB 저장 오류 (컬럼 추가 여부 확인): {e}")
+                        st.error(f"DB 오류: {e}")
 
-    # --- 대기 목록 섹션 ---
+    # --- [개선] 통합 관리 목록 섹션 ---
     st.markdown("---")
-    st.subheader("📝 예약 대기 목록")
-    
-    res = supabase.table("webinar_reservations").select("*").eq("status", "pending").order("scheduled_at").execute()
+    st.subheader("📋 전체 예약 및 녹화 현황")
+
+    # 모든 상태의 데이터를 최신순으로 가져옴
+    res = supabase.table("webinar_reservations").select("*").order("scheduled_at", desc=True).limit(20).execute()
     
     if res.data:
         for item in res.data:
-            # 1. 실제 녹화 시각 처리 (저장된 지역 시간대로 다시 변환)
-            sched_dt = pd.to_datetime(item['scheduled_at'])
-            
-            # 저장된 지역명(예: "대한민국 (KST)")을 가져와서 해당 타임존으로 변환
-            saved_tz_name = item.get('timezone_name', '대한민국 (KST)')
-            target_tz = pytz.timezone(WORLD_ZONES.get(saved_tz_name, 'Asia/Seoul'))
-            
-            # [수정 핵심] 저장된 UTC 시간을 다시 그 나라의 현지 시간으로 변환
-            local_sched_str = sched_dt.astimezone(target_tz).strftime('%Y-%m-%d %H:%M')
-            
-            # 2. 예약 신청 완료 시각 (서울 KST 기준)
-            created_dt = pd.to_datetime(item.get('created_at'))
-            kst_created = created_dt.astimezone(KST).strftime('%Y-%m-%d %H:%M')
-            
-            # 참고용 한국 시간
-            kst_sched_ref = sched_dt.astimezone(KST).strftime('%Y-%m-%d %H:%M')
+            status = item.get('status', 'pending')
+            # 상태별 아이콘 및 메시지 설정
+            status_map = {
+                "pending": ("⏳ 대기 중", "blue"),
+                "running": ("⏺️ 녹화 중...", "orange"),
+                "completed": ("✅ 녹화 완료", "green"),
+                "error": ("❌ 에러 발생", "red")
+            }
+            status_text, status_color = status_map.get(status, ("❓ 알 수 없음", "gray"))
 
-            with st.expander(f"📌 [현지 {local_sched_str}] {item.get('title')}"):
+            # 시간 처리
+            sched_dt = pd.to_datetime(item['scheduled_at'])
+            target_tz = pytz.timezone(WORLD_ZONES.get(item.get('timezone_name', '대한민국 (KST)'), 'Asia/Seoul'))
+            local_sched = sched_dt.astimezone(target_tz).strftime('%Y-%m-%d %H:%M')
+            kst_sched = sched_dt.astimezone(KST).strftime('%Y-%m-%d %H:%M')
+            created_at = pd.to_datetime(item['created_at']).astimezone(KST).strftime('%m-%d %H:%M')
+
+            # Expander 제목에 상태를 표시하여 직관성 극대화
+            with st.expander(f"[{status_text}] {item.get('title')} ({local_sched})"):
                 c1, c2 = st.columns([4, 1])
                 with c1:
-                    st.markdown(f"**🔗 주소:** {item.get('webinar_url')}")
+                    st.markdown(f"**🔗 URL:** {item.get('webinar_url')}")
                     col_a, col_b = st.columns(2)
                     with col_a:
-                        # 이제 2:45분이 아니라, 설정한 현지 시간(예: 11:45)이 정확히 나옵니다.
-                        st.info(f"🎥 **실제 녹화 시작 ({saved_tz_name})**\n{local_sched_str}")
-                        st.caption(f"(한국 시간 기준: {kst_sched_ref})")
+                        st.info(f"📅 **녹화 시작 (현지)**\n{local_sched}\n(KST: {kst_sched})")
                     with col_b:
-                        st.success(f"📩 **예약 신청 완료 (서울 KST)**\n{kst_created}")
+                        st.success(f"📩 **신청 일시 (KST)**\n{created_at}")
+                    
+                    # 완료 상태일 때만 영상 확인 버튼 표시
+                    if status == "completed":
+                        video_url = item.get('video_url')
+                        if video_url:
+                            st.markdown(f"### 🎬 [녹화 영상 확인하기]({video_url})")
+                        else:
+                            st.warning("⚠️ 파일 링크를 찾는 중입니다...")
+                    elif status == "error":
+                        st.error("❗ 녹화 중 문제가 발생했습니다. 로그를 확인해 주세요.")
+                    elif status == "running":
+                        st.warning("🔔 현재 녹화가 진행 중입니다. 종료 후 링크가 생성됩니다.")
+
                 with c2:
-                    if st.button("🗑️ 삭제", key=f"del_{item.get('id')}", use_container_width=True):
+                    if st.button("🗑️ 삭제", key=f"del_{item['id']}", use_container_width=True):
                         supabase.table("webinar_reservations").delete().eq("id", item['id']).execute()
                         st.rerun()
     else:
-        st.info("현재 대기 중인 예약이 없습니다.")
+        st.info("표시할 내역이 없습니다.")
 
 # --- 5. [화면 2] 녹화 내역 확인 ---
 elif menu == "📂 녹화 내역 확인":
