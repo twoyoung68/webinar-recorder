@@ -85,74 +85,100 @@ with st.sidebar:
 if menu == "📅 웨비나 녹화 예약":
     st.header("📅 글로벌 웨비나 녹화 예약")
     
-    with st.form("recording_form", clear_on_submit=True):
-        # 1. 웨비나 명칭 입력 추가
-        webinar_title = st.text_input("웨비나 명칭 (예: 수소 세미나, EPC 기술 컨퍼런스)", placeholder="목록에 표시될 이름을 입력하세요.")
-        webinar_url = st.text_input("웨비나 URL (필수)", placeholder="https://...")
+    # [설정] 현재 시간보다 1시간 후를 기본값으로 설정 (신청 시각과 구분하기 위함)
+    now_kst = datetime.now(KST)
+    default_start_time = (now_kst + timedelta(hours=1))
+
+    # [중요] clear_on_submit=False로 변경하여 입력값이 유지되도록 수정
+    with st.form("recording_form", clear_on_submit=False):
+        st.markdown("### 📝 예약 정보 입력")
+        
+        webinar_title = st.text_input(
+            "웨비나 명칭", 
+            placeholder="예: 수소 세미나, Plant TI 기술 회의 등",
+            help="대기 목록에 표시될 이름입니다."
+        )
+        
+        webinar_url = st.text_input(
+            "웨비나 URL (필수)", 
+            placeholder="https://example.com/webinar/123"
+        )
         
         selected_zone_name = st.selectbox("현지 시간대 선택", list(WORLD_ZONES.keys()))
         selected_timezone = pytz.timezone(WORLD_ZONES[selected_zone_name])
         
+        # 현지 기준 시간 계산
+        now_local = datetime.now(selected_timezone)
+        
         col1, col2 = st.columns(2)
-        with col1: local_date = st.date_input("현지 날짜", datetime.now(selected_timezone))
-        with col2: local_time = st.time_input("현지 시작 시간", datetime.now(selected_timezone))
+        with col1:
+            local_date = st.date_input("현지 날짜", now_local.date())
+        with col2:
+            # 기본 시간을 현재보다 1시간 뒤로 설정하여 '신청 시각'과 확실히 차이를 둠
+            local_time = st.time_input("현지 시작 시간", (now_local + timedelta(hours=1)).time())
         
-        duration = st.number_input("녹화 지속 시간 (분)", min_value=1, value=60)
+        duration = st.number_input("녹화 지속 시간 (분)", min_value=1, value=60, step=10)
         
-        # 안내 문구 추가
-        st.caption("※ 엔터 키를 누르면 제출될 수 있습니다. 모든 항목을 입력 후 버튼을 눌러주세요.")
+        st.write("") 
+        st.caption("⚠️ 모든 항목 입력 후 '✅ 예약 확정' 버튼을 눌러주세요. (엔터 시 예약이 실행될 수 있으니 주의)")
         submit = st.form_submit_button("✅ 예약 확정")
         
-        # 제출 로직 개선 (엔터 실수 방지)
+        # [제출 처리 로직]
         if submit:
             if not webinar_url or not webinar_title:
-                st.warning("⚠️ 웨비나 명칭과 URL을 모두 입력해야 예약이 확정됩니다.")
+                st.error("⚠️ **입력 누락:** 명칭과 URL을 모두 입력해야 예약이 확정됩니다.")
             else:
+                # 현지 시간을 저장용 포맷으로 변환
                 local_dt = selected_timezone.localize(datetime.combine(local_date, local_time))
                 data = {
-                    "title": webinar_title,      # 새 컬럼 추가 필요
-                    "webinar_url": webinar_url, 
-                    "scheduled_at": local_dt.isoformat(), 
-                    "duration_min": duration, 
+                    "title": webinar_title,
+                    "webinar_url": webinar_url,
+                    "scheduled_at": local_dt.isoformat(),
+                    "duration_min": duration,
                     "status": "pending"
                 }
-                supabase.table("webinar_reservations").insert(data).execute()
-                st.success(f"🎉 '{webinar_title}' 예약이 성공적으로 완료되었습니다!")
-                st.rerun()
+                
+                try:
+                    supabase.table("webinar_reservations").insert(data).execute()
+                    st.success(f"🎉 '{webinar_title}' 예약이 등록되었습니다! 아래 목록을 확인하세요.")
+                    # 버튼을 누른 후에도 입력값은 유지되지만, 성공 메시지로 예약 완료를 알림
+                except Exception as e:
+                    st.error(f"데이터베이스 저장 실패: {e}")
 
+    # --- 대기 목록 섹션 ---
     st.markdown("---")
     st.subheader("📝 현재 예약 대기 목록")
     
-    # 데이터 불러오기 (created_at 포함)
-    res = supabase.table("webinar_reservations").select("*").eq("status", "pending").order("scheduled_at").execute()
+    res = supabase.table("webinar_reservations")\
+        .select("*")\
+        .eq("status", "pending")\
+        .order("scheduled_at")\
+        .execute()
     
     if res.data:
         for item in res.data:
-            # 1. 실제 녹화 예정 시각 (Scheduled Time)
-            sched_dt = pd.to_datetime(item['scheduled_at'])
+            # 1. 실제 녹화 예정 시간 (입력한 시간)
+            # ISO 문자열을 날짜 객체로 변환 시 시차(Offset)를 정확히 반영
+            sched_dt = pd.to_datetime(item['scheduled_at'], utc=True)
             kst_sched = sched_dt.astimezone(KST).strftime('%Y-%m-%d %H:%M')
-            local_sched = sched_dt.strftime('%Y-%m-%d %H:%M')
             
-            # 2. 예약 신청 시각 (Created Time - Supabase 기본 컬럼)
-            created_dt = pd.to_datetime(item.get('created_at'))
+            # 2. 예약 신청 시각 (DB 생성 시간)
+            created_dt = pd.to_datetime(item.get('created_at'), utc=True)
             kst_created = created_dt.astimezone(KST).strftime('%Y-%m-%d %H:%M')
             
-            # 대기 목록 표현 방식 수정: [녹화시각] 명칭
-            title_display = item.get('title') if item.get('title') else item.get('webinar_url')[:30]
+            display_name = item.get('title') if item.get('title') else "이름 없음"
             
-            with st.expander(f"📌 [녹화: {kst_sched}] {title_display}"):
+            with st.expander(f"📌 [녹화: {kst_sched}] {display_name}"):
                 c1, c2 = st.columns([4, 1])
                 with c1:
-                    st.markdown(f"**🔗 URL:** {item.get('webinar_url')}")
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.info(f"📅 **실제 녹화 시각 (KST)**\n{kst_sched}")
-                    with col_b:
+                    st.markdown(f"**🔗 주소:** {item.get('webinar_url')}")
+                    col_info1, col_info2 = st.columns(2)
+                    with col_info1:
+                        # 배경색을 넣어 시각적으로 확실히 구분
+                        st.info(f"📅 **실제 녹화 시간 (KST)**\n{kst_sched}")
+                    with col_info2:
                         st.success(f"📩 **예약 신청 시각 (KST)**\n{kst_created}")
-                    
-                    st.caption(f"📍 현지 예약 시간: {local_sched} ({selected_zone_name}) | ⏱️ 지속 시간: {item.get('duration_min')}분")
-                
-                with c2: 
+                with c2:
                     if st.button("🗑️ 삭제", key=f"del_{item.get('id')}"):
                         supabase.table("webinar_reservations").delete().eq("id", item['id']).execute()
                         st.rerun()
