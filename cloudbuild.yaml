@@ -1,13 +1,26 @@
 steps:
-  # [1단계] Docker 이미지 빌드
+  # [1단계] 이전 이미지를 가져와 캐시로 활용 (캐시가 없어도 에러 무시)
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/webinar-recorder', '.']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        docker pull gcr.io/$PROJECT_ID/webinar-recorder:latest || exit 0
 
-  # [2단계] 이미지 푸시
+  # [2단계] 캐시를 사용하여 Docker 이미지 빌드
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/webinar-recorder']
+    args: [
+      'build',
+      '-t', 'gcr.io/$PROJECT_ID/webinar-recorder:latest',
+      '--cache-from', 'gcr.io/$PROJECT_ID/webinar-recorder:latest',
+      '.'
+    ]
 
-  # [3단계] Cloud Run 배포 (Secret Manager와 직접 연동)
+  # [3단계] 빌드된 이미지를 푸시
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/webinar-recorder:latest']
+
+  # [4단계] Cloud Run에 서비스 배포
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -15,16 +28,15 @@ steps:
       - 'deploy'
       - 'webinar-recorder'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/webinar-recorder'
+      - 'gcr.io/$PROJECT_ID/webinar-recorder:latest'
       - '--region'
       - 'asia-northeast3'
-      - '--platform'
-      - 'managed'
-      # 아래 설정을 통해 Secret Manager의 값을 환경 변수로 자동 매핑합니다.
-      # 형식: 환경변수명=시크릿이름:버전
       - '--set-secrets'
       - 'FIREBASE_KEY=FIREBASE_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest'
       - '--allow-unauthenticated'
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  # [핵심] 빌드 머신 성능 업그레이드 (기본 1 vCPU -> 8 vCPU로 업그레이드)
+  # 훨씬 빠르게 빌드되지만, 분당 비용이 약간 더 발생할 수 있습니다 (체감 속도는 대폭 상승).
+  machineType: 'E2_HIGHCPU_8'
