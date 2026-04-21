@@ -85,48 +85,49 @@ with st.sidebar:
 if menu == "📅 웨비나 녹화 예약":
     st.header("📅 글로벌 웨비나 녹화 예약")
 
-    # [수정] 페이지가 리런될 때마다 시간이 흐르지 않도록 세션 상태에 기본 시간 고정
-    if 'default_date' not in st.session_state:
-        st.session_state.default_date = datetime.now(KST).date()
-    if 'default_time' not in st.session_state:
-        # 현재 시간보다 1시간 뒤의 '정각' 혹은 '30분' 단위로 초기값 고정
-        target = datetime.now(KST) + timedelta(hours=1)
-        st.session_state.default_time = target.replace(second=0, microsecond=0).time()
+    # 페이지 리런 시 시간 흐름 방지용 세션 설정
+    if 'fixed_now' not in st.session_state:
+        st.session_state.fixed_now = datetime.now(KST)
 
     with st.form("recording_form", clear_on_submit=False):
-        st.markdown("### 📝 녹화 정보 입력")
+        st.markdown("### 📝 1. 웨비나 정보 입력")
+        webinar_title = st.text_input("웨비나 명칭", placeholder="예: 수소 에너지 세미나")
+        webinar_url = st.text_input("웨비나 URL", placeholder="https://...")
         
-        webinar_title = st.text_input("웨비나 명칭", placeholder="예: 수소 세미나 (필수)")
-        webinar_url = st.text_input("웨비나 URL", placeholder="https://... (필수)")
-        
-        selected_zone_name = st.selectbox("현지 시간대 선택", list(WORLD_ZONES.keys()))
+        st.markdown("### 🕒 2. 녹화 일정 설정 (개최지 기준)")
+        selected_zone_name = st.selectbox("웨비나 개최 지역 (타임존)", list(WORLD_ZONES.keys()))
         selected_timezone = pytz.timezone(WORLD_ZONES[selected_zone_name])
         
+        # 개최지 기준의 현재 시각 계산
+        now_at_location = st.session_state.fixed_now.astimezone(selected_timezone)
+        st.caption(f"📍 현재 {selected_zone_name} 현지 시각은 **{now_at_location.strftime('%Y-%m-%d %H:%M')}** 입니다.")
+
         col1, col2 = st.columns(2)
         with col1:
-            # 세션에 고정된 날짜 사용
-            local_date = st.date_input("녹화 날짜 (현지 기준)", st.session_state.default_date)
+            local_date = st.date_input("녹화 시작 날짜 (개최지 기준)", now_at_location.date())
         with col2:
-            # 세션에 고정된 시간을 사용하므로 엔터를 쳐도 시간이 바뀌지 않음
-            local_time = st.time_input("녹화 시작 시각 (현지 기준)", st.session_state.default_time, step=60)
+            # 1분 단위 입력 가능
+            local_time = st.time_input("녹화 시작 시각 (개최지 기준)", (now_at_location + timedelta(hours=1)).time(), step=60)
         
         duration = st.number_input("녹화 지속 시간 (분)", min_value=1, value=60, step=1)
         
         st.write("")
-        st.caption("⚠️ 반드시 위 항목을 모두 확인하신 후 아래 버튼을 클릭하여 예약을 확정하세요.")
-        submit = st.form_submit_button("✅ 예약 확정")
+        confirm_check = st.checkbox("입력한 '개최지 기준 시각'이 정확함을 확인했습니다.")
         
-        # [제출 로직] 버튼을 눌렀을 때만 실행되도록 엄격하게 체크
+        submit = st.form_submit_button("✅ 예약 확정 (클릭 시에만 저장됨)")
+        
         if submit:
-            if not webinar_title or not webinar_url:
-                st.error("⚠️ **입력 누락:** 웨비나 명칭과 URL을 모두 입력해야 예약이 가능합니다.")
+            if not confirm_check:
+                st.warning("⚠️ 예약 확정을 위해 위 '확인했습니다' 체크박스를 먼저 클릭해 주세요.")
+            elif not webinar_title or not webinar_url:
+                st.error("⚠️ 웨비나 명칭과 URL을 모두 입력해 주세요.")
             else:
-                # 사용자가 선택한 미래의 현지 시각 계산
+                # 사용자가 선택한 개최지의 날짜/시간 객체 생성
                 chosen_dt = selected_timezone.localize(datetime.combine(local_date, local_time))
                 
-                # [검증] 과거 시간 예약 방지
-                if chosen_dt < datetime.now(selected_timezone):
-                    st.warning("📍 **주의:** 현재보다 과거의 시간은 예약할 수 없습니다. 시각을 확인해 주세요.")
+                # 과거 예약 방지 (KST 기준 비교)
+                if chosen_dt.astimezone(KST) < datetime.now(KST):
+                    st.error("📍 현재보다 과거 시각으로는 예약할 수 없습니다.")
                 else:
                     data = {
                         "title": webinar_title,
@@ -134,47 +135,51 @@ if menu == "📅 웨비나 녹화 예약":
                         "scheduled_at": chosen_dt.isoformat(),
                         "duration_min": duration,
                         "status": "pending"
-                        # created_at은 DB(Supabase)에서 자동으로 현재 시각을 입력함
                     }
-                    
                     try:
                         supabase.table("webinar_reservations").insert(data).execute()
-                        st.success(f"🎉 '{webinar_title}' 예약이 확정되었습니다!")
-                        # 예약 성공 후에는 시간을 다음 예약을 위해 초기화하고 싶다면 여기서 세션 상태 삭제 가능
+                        st.success(f"🎉 '{webinar_title}' 예약 완료!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"데이터베이스 저장 실패: {e}")
+                        st.error(f"DB 저장 오류: {e}")
 
-    # --- 대기 목록 섹션 ---
+    # --- 대기 목록 섹션 (사용자 요청 반영 수정) ---
     st.markdown("---")
-    st.subheader("📝 현재 예약 대기 목록 (한국 시간 기준)")
+    st.subheader("📝 예약 대기 목록")
     
     res = supabase.table("webinar_reservations").select("*").eq("status", "pending").order("scheduled_at").execute()
     
     if res.data:
         for item in res.data:
-            # 1. 예약된 녹화 시각 (사용자가 설정한 미래 시점)
+            # 1. 실제 녹화 예정 시각 (해당 국가 현지 시각)
+            # 저장된 ISO 문자열에서 현지 시각 정보를 그대로 추출
             sched_dt = pd.to_datetime(item['scheduled_at'])
-            kst_sched = sched_dt.astimezone(KST).strftime('%Y-%m-%d %H:%M')
+            local_sched_str = sched_dt.strftime('%Y-%m-%d %H:%M')
             
-            # 2. 예약 신청 시각 (DB에 기록된 실제 입력 시점)
+            # 2. 예약 신청 완료 시각 (한국 KST 기준)
             created_dt = pd.to_datetime(item.get('created_at'))
             kst_created = created_dt.astimezone(KST).strftime('%Y-%m-%d %H:%M')
             
-            display_name = item.get('title') if item.get('title') else "이름 없음"
-            
-            with st.expander(f"📌 [녹화: {kst_sched}] {display_name}"):
+            # 참고용: 녹화 시각의 한국 시간 환산
+            kst_sched_ref = sched_dt.astimezone(KST).strftime('%H:%M')
+
+            # 목록 제목에 [현지 시간]을 표시하여 직관성 높임
+            with st.expander(f"📌 [현지 {local_sched_str}] {item.get('title')}"):
                 c1, c2 = st.columns([4, 1])
                 with c1:
-                    st.markdown(f"**🔗 URL:** {item.get('webinar_url')}")
+                    st.markdown(f"**🔗 주소:** {item.get('webinar_url')}")
                     col_a, col_b = st.columns(2)
                     with col_a:
-                        st.info(f"📅 **실제 녹화 시작 (KST)**\n{kst_sched}")
+                        # [요청 반영] 실제 녹화 시작은 해당 나라 시간으로 표시
+                        st.info(f"🎥 **실제 녹화 시작 (현지 시각)**\n{local_sched_str}")
+                        st.caption(f"(한국 시간 기준: {kst_sched_ref})")
                     with col_b:
-                        st.success(f"📩 **예약 신청 시각 (KST)**\n{kst_created}")
-                    st.caption(f"⏱️ 지속: {item.get('duration_min')}분 | 📍 현지 기준: {sched_dt.strftime('%Y-%m-%d %H:%M')}")
+                        # [요청 반영] 신청 시각은 한국(KST) 시간으로 표시
+                        st.success(f"📩 **예약 신청 완료 (서울 KST)**\n{kst_created}")
+                    
+                    st.markdown(f"⏱️ **지속 시간:** {item.get('duration_min')}분")
                 with c2:
-                    if st.button("🗑️ 삭제", key=f"del_{item.get('id')}"):
+                    if st.button("🗑️ 삭제", key=f"del_{item.get('id')}", use_container_width=True):
                         supabase.table("webinar_reservations").delete().eq("id", item['id']).execute()
                         st.rerun()
     else:
