@@ -1,38 +1,35 @@
-name: Webinar Scheduler
+name: Webinar Recorder Scheduler
 
 on:
   schedule:
-    - cron: '*/10 * * * *'  # 10분마다 실행
-  workflow_dispatch:        # 수동 실행 버튼 (테스트용)
+    # 10분마다 자동으로 실행 (원하시는 주기로 조정 가능)
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    # 버튼 눌러서 수동으로도 실행 가능하게 설정
 
 jobs:
-  run-scheduler:
+  build:
     runs-on: ubuntu-latest
-    # 녹화 시간에 맞춰 타임아웃을 넉넉히 설정 (예: 최대 3시간)
-    timeout-minutes: 200 
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'  # 3.10에서 3.11로 업그레이드
+          python-with-version: '3.10'
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # Playwright 및 브라우저 엔진 설치
-          pip install playwright
-          playwright install chromium
-          playwright install-deps chromium
+          playwright install chromium --with-deps
 
-      - name: Run Scheduler
+      - name: Run Recorder
+        # [핵심 수정] scheduler.py 대신 우리가 만든 main.py를 실행하도록 변경
+        run: python main.py
         env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        # scheduler.py가 실행되어 main.py 녹화가 끝날 때까지 대기합니다.
-        run: python scheduler.py
