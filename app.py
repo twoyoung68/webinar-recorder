@@ -66,7 +66,7 @@ def init_all_connections():
 
 # 초기화 실행
 storage_client, supabase = init_all_connections()
-bucket_name = "webinar-recorder-plant-titeam.appspot.com"
+bucket_name = "webinar-recordings-plant-ti"
 bucket = storage_client.bucket(bucket_name)
 
 def get_size_format(b, factor=1024, suffix="B"):
