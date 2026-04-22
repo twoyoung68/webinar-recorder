@@ -67,26 +67,26 @@ supabase = init_connection()
 # --- 4. 사이드바 구성 ---
 # 로고 에러 방지를 위해 텍스트와 함께 배치
 st.sidebar.markdown("## 🏗️ Daewoo E&C")
-st.sidebar.markdown("### **Plant TI Webinar**")
+st.sidebar.markdown("### **Plant TI Team**")
 st.sidebar.write("")
 
 # [요청사항] 이 부분의 글자가 큼직하게 나옵니다.
 menu = st.sidebar.radio(
     "Menu Selection",
-    ["📅 예약 및 현황 관리", "🎥 녹화 영상 확인"],
+    ["📅 예약 및 현황", "🎥 녹화 영상"],
     index=0
 )
 
 st.sidebar.markdown("---")
 
 # 현재 메뉴 상태를 하단에 한 번 더 거대하게 표시
-if menu == "🎥 녹화 영상 확인":
+if menu == "🎥 녹화 영상":
     st.sidebar.markdown('<div class="menu-focus-box">🎥<br>영상<br>확인</div>', unsafe_allow_html=True)
 else:
     st.sidebar.markdown('<div class="menu-focus-box" style="color:#004a99; border-color:#004a99; background-color:#F0F7FF;">📅<br>녹화<br>예약</div>', unsafe_allow_html=True)
 
 # --- 5. [메뉴 1] 예약 및 현황 관리 ---
-if menu == "📅 예약 및 현황 관리":
+if menu == "📅 예약 및 현황":
     st.title("📅 웨비나 녹화 예약 및 현황")
     
     with st.container(border=True):
@@ -128,7 +128,7 @@ if menu == "📅 예약 및 현황 관리":
                     st.rerun()
 
 # --- 6. [메뉴 2] 녹화 영상 확인 (다운로드 방식) ---
-elif menu == "🎥 녹화 영상 확인":
+elif menu == "🎥 녹화 영상":
     st.title("🎥 녹화 완료 영상 리스트")
     st.info("💡 영상 보기 에러 방지를 위해 '직접 다운로드' 버튼으로 변경되었습니다.")
 
