@@ -9,7 +9,7 @@ from supabase import create_client, Client
 import pytz
 
 # --- 1. 페이지 설정 ---
-st.set_page_config(page_title="Plant TI Webinar Recorder", page_icon="🎥", layout="wide")
+st.set_page_config(page_title="Plant TI Team Webinar Recorder", page_icon="🎥", layout="wide")
 KST = pytz.timezone('Asia/Seoul')
 
 WORLD_ZONES = {
@@ -21,31 +21,26 @@ WORLD_ZONES = {
     "싱가포르/대만 (CST)": "Asia/Singapore"
 }
 
-# --- 2. CSS 스타일: 가시성 및 디자인 강화 ---
+# --- 2. CSS 스타일: 명칭 통일 및 디자인 최적화 ---
 st.markdown("""
     <style>
-    /* 사이드바 제목 스타일: 군청색 및 볼드 */
-    .sidebar-title-navy {
-        color: #000080 !important; /* 군청색 */
-        font-size: 22px !important;
-        margin-bottom: 5px !important;
-    }
-    .sidebar-subtitle-bold {
+    /* 사이드바 제목 스타일: 군청색 및 볼드체 통일 */
+    .sidebar-main-title {
+        color: #000080 !important;
+        font-size: 24px !important;
         font-weight: 800 !important;
-        font-size: 18px !important;
-        color: #333 !important;
+        line-height: 1.2;
         margin-bottom: 20px !important;
     }
     
-    /* 사이드바 메뉴(라디오 버튼) 글자 크기 확대 */
+    /* 사이드바 메뉴(라디오 버튼) 3배 확대 */
     div[data-testid="stRadio"] label p {
         font-size: 28px !important;
         font-weight: 800 !important;
-        line-height: 1.6 !important;
         color: #004a99 !important;
     }
     
-    /* 선택된 메뉴 강조 박스 */
+    /* 선택 메뉴 강조 박스 */
     .menu-focus-box {
         font-size: 38px !important;
         font-weight: 900 !important;
@@ -58,7 +53,6 @@ st.markdown("""
         margin-top: 20px;
     }
     
-    /* 구분선 스타일 */
     .sidebar-divider {
         border-top: 2px solid #ddd;
         margin: 20px 0;
@@ -78,21 +72,18 @@ supabase = init_connection()
 # --- 4. 사이드바 구성 ---
 st.sidebar.markdown("## 🏗️ Daewoo E&C")
 
-# [요청사항 반영] 군청색 제목 및 볼드체 서브제목
-st.sidebar.markdown('<p class="sidebar-title-navy">Plant TI Webinar Recorder</p>', unsafe_allow_html=True)
-st.sidebar.markdown('<p class="sidebar-subtitle-bold">Plant TI Team Webinar Recorder</p>', unsafe_allow_html=True)
+# [요청사항 반영] 명칭 통일 및 중복 제거
+st.sidebar.markdown('<p class="sidebar-main-title">Plant TI Team<br>Webinar Recorder</p>', unsafe_allow_html=True)
 
-# [요청사항 반영] 메뉴와 헤더 사이 구분선
 st.sidebar.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
 
-# [요청사항 반영] 메뉴명 단축
+# 메뉴명 단축
 menu = st.sidebar.radio(
     "Menu Selection",
     ["📅 예약 및 현황", "🎥 녹화 영상"],
     index=0
 )
 
-# 메뉴 하단 구분선
 st.sidebar.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
 
 if menu == "🎥 녹화 영상":
@@ -104,7 +95,6 @@ else:
 if menu == "📅 예약 및 현황":
     st.title("📅 웨비나 예약 및 실시간 현황")
     
-    # [메뉴 1] 내부의 예약 입력 폼 부분만 이 코드로 바꾸세요
     with st.container(border=True):
         st.subheader("📝 신규 예약 입력")
         with st.form("recording_form", clear_on_submit=True):
@@ -121,15 +111,15 @@ if menu == "📅 예약 및 현황":
                 local_date = st.date_input("현지 날짜", now_at.date())
                 local_time = st.time_input("현지 시각", now_at.time())
 
-            # --- [추가된 안전장치] ---
             st.markdown("---")
-            confirm_check = st.checkbox("✅ 입력한 웨비나 정보와 시간이 정확함을 확인했습니다.")
+            # [요청사항 반영] 중복 문구 및 버튼 정리
+            confirm_check = st.checkbox("입력한 웨비나 정보와 시간이 정확함을 확인했습니다.")
             
             submit = st.form_submit_button("🚀 예약 확정 (Schedule Now)")
             
             if submit:
                 if not confirm_check:
-                    st.warning("⚠️ 먼저 확인 체크박스를 선택해 주세요.")
+                    st.warning("⚠️ 확인 체크박스를 선택해 주세요.")
                 elif webinar_title and webinar_url:
                     chosen_dt = target_tz.localize(datetime.combine(local_date, local_time))
                     data = {
@@ -138,22 +128,10 @@ if menu == "📅 예약 및 현황":
                         "status": "pending", "timezone_name": selected_zone_name
                     }
                     supabase.table("webinar_reservations").insert(data).execute()
-                    st.success("✅ 예약이 완료되었습니다!")
+                    st.success(f"✅ '{webinar_title}' 예약 완료!")
                     st.rerun()
                 else:
-                    st.warning("⚠️ 명칭과 URL을 모두 입력해 주세요.")
-
-            if st.form_submit_button("🚀 예약 확정"):
-                if webinar_title and webinar_url:
-                    chosen_dt = target_tz.localize(datetime.combine(local_date, local_time))
-                    data = {
-                        "title": webinar_title, "webinar_url": webinar_url,
-                        "scheduled_at": chosen_dt.isoformat(), "duration_min": duration,
-                        "status": "pending", "timezone_name": selected_zone_name
-                    }
-                    supabase.table("webinar_reservations").insert(data).execute()
-                    st.success("✅ 예약이 완료되었습니다!")
-                    st.rerun()
+                    st.warning("⚠️ 정보(명칭/URL)를 모두 입력해 주세요.")
 
     st.markdown("---")
     st.subheader("📋 실시간 예약 목록")
@@ -186,7 +164,7 @@ if menu == "📅 예약 및 현황":
 # --- 6. [메뉴 2] 녹화 영상 ---
 elif menu == "🎥 녹화 영상":
     st.title("🎥 녹화 완료 영상 확인")
-    st.info("💡 완료된 영상을 PC로 다운로드하여 확인하세요.")
+    st.info("💡 완료된 영상은 직접 다운로드하여 확인하시기 바랍니다.")
 
     res = supabase.table("webinar_reservations").select("*").eq("status", "completed").order("created_at", desc=True).execute()
     
@@ -212,7 +190,6 @@ elif menu == "🎥 녹화 영상":
                                     border: none;
                                     border-radius: 8px;
                                     font-weight: bold;
-                                    font-size: 16px;
                                     cursor: pointer;">
                                     📥 다운로드
                                 </button>
