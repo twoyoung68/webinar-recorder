@@ -1,7 +1,7 @@
 # ==========================================
 # SYSTEM: Plant TI Team Webinar Recorder
-# VERSION: v1.4.3 (2026-04-28)
-# DESCRIPTION: Fixed .bin Download Bug & Added Caution Notice
+# VERSION: v1.4.4 (2026-04-28)
+# DESCRIPTION: Detailed Platform Compatibility Caution
 # UPDATED BY: Gemini Assistant (Based on v1.3.0 Stable)
 # ==========================================
 
@@ -50,20 +50,26 @@ st.markdown(f"""
     .version-text {{ font-size: 14px !important; font-weight: normal !important; color: gray !important; vertical-align: bottom; margin-left: 10px; }}
     .caution-container {{
         background-color: {caution_bg}; border: 2px solid {caution_border};
-        padding: 15px; border-radius: 10px; margin-bottom: 25px; color: {txt};
+        padding: 18px; border-radius: 10px; margin-bottom: 25px; color: {txt};
     }}
-    .caution-title {{ color: #ff4b4b; font-weight: 900; font-size: 18px; margin-bottom: 5px; }}
+    .caution-title {{ color: #ff4b4b; font-weight: 900; font-size: 18px; margin-bottom: 8px; }}
+    .caution-list {{ font-size: 14px; line-height: 1.6; margin-top: 5px; }}
     </style>
 """, unsafe_allow_html=True)
 
-# 주의사항 출력 함수
+# [v1.4.4 핵심] 주의사항 출력 함수 보강
 def show_caution_notice():
     st.markdown(f"""
         <div class="caution-container">
-            <div class="caution-title">⚠️ 필독: 녹화 제한 안내</div>
-            <div style="font-size: 15px; font-weight: 600;">
-                보안 정책 및 <b>녹화 방지 기술(DRM, 화면 캡처 차단 등)</b>이 적용된 웹사이트는 시스템상 녹화가 불가능하거나 검은 화면으로 저장될 수 있습니다. 
-                중요한 세미나의 경우 사전에 테스트 녹화를 권장합니다.
+            <div class="caution-title">⚠️ 필독: 시스템 녹화 제한 안내</div>
+            <div class="caution-list">
+                본 시스템은 웹 브라우저 기반 자동화 도구입니다. 아래와 같은 경우 녹화가 불가능하거나 정상적으로 작동하지 않습니다.
+                <ul>
+                    <li><b>전용 앱 실행 플랫폼:</b> <b>Zoom, MS Teams, Cisco Webex</b> 등 브라우저가 아닌 별도 앱 설치/실행을 강제하는 사이트 (녹화 불가)</li>
+                    <li><b>강력한 봇 차단:</b> 로그인 시 로봇 방지(CAPTCHA)나 2차 인증을 요구하는 사이트</li>
+                    <li><b>보안 컨텐츠(DRM):</b> 넷플릭스, 유료 강의 등 복제 방지 기술이 적용된 사이트 (검은 화면으로 저장됨)</li>
+                </ul>
+                <b>중요한 세미나는 반드시 사전에 5분 내외의 테스트 예약을 통해 녹화 가능 여부를 확인하십시오.</b>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -72,7 +78,7 @@ supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 # --- 3. 사이드바 ---
 st.sidebar.markdown("### 🏗️ Daewoo E&C")
-st.sidebar.markdown(f'#### Plant TI Team <span class="version-text">v1.4.3</span>', unsafe_allow_html=True)
+st.sidebar.markdown(f'#### Plant TI Team <span class="version-text">v1.4.4</span>', unsafe_allow_html=True)
 st.sidebar.markdown("---")
 admin_input = st.sidebar.text_input("Master Password", type="password")
 is_admin = (admin_input == MASTER_PASSWORD)
@@ -80,7 +86,7 @@ menu = st.sidebar.radio("메뉴 선택", ["📅 예약 및 현황", "🎥 녹화
 
 # --- 4. [메뉴 1] 예약 및 현황 ---
 if menu == "📅 예약 및 현황":
-    st.markdown(f'# 📅 웨비나 예약 현황 <span class="version-text">v1.4.3</span>', unsafe_allow_html=True)
+    st.markdown(f'# 📅 웨비나 예약 현황 <span class="version-text">v1.4.4</span>', unsafe_allow_html=True)
     show_caution_notice()
     
     with st.container(border=True):
@@ -95,13 +101,14 @@ if menu == "📅 예약 및 현황":
         with c3: zone = st.selectbox("5. 개최지 타임존", list(WORLD_ZONES.keys()))
         with c4: dur = st.number_input("6. 녹화 시간(분)", value=60)
         
-        t_tz = pytz.timezone(WORLD_ZONES[zone])
+        target_tz = pytz.timezone(WORLD_ZONES[zone])
         col_d, col_t = st.columns(2)
-        with col_d: d_in = st.date_input("7. 녹화 시작 날짜 (현지 기준)")
-        with col_t: t_in = st.time_input("8. 녹화 시작 시각 (현지 기준)")
+        # 명칭 통일: 녹화 시작 날짜/시각
+        with col_d: rec_date = st.date_input("7. 녹화 시작 날짜 (현지 기준)")
+        with col_t: rec_time = st.time_input("8. 녹화 시작 시각 (현지 기준)")
         
-        l_dt = t_tz.localize(datetime.combine(d_in, t_in))
-        k_dt = l_dt.astimezone(KST)
+        rec_dt = target_tz.localize(datetime.combine(rec_date, rec_time))
+        k_dt = rec_dt.astimezone(KST)
         
         st.markdown(f"""
             <div class="time-box">
@@ -111,14 +118,14 @@ if menu == "📅 예약 및 현황":
         """, unsafe_allow_html=True)
         
         st.markdown("---")
-        chk = st.checkbox("✅ 정보 및 주의사항을 모두 확인했습니다.")
+        chk = st.checkbox("✅ 입력 정보와 위의 플랫폼 제한 사항을 모두 확인했습니다.")
         if st.button("🚀 예약 확정", use_container_width=True):
             if chk and title and url:
                 supabase.table("webinar_reservations").insert({
-                    "title": title, "webinar_url": url, "email": email, "scheduled_at": l_dt.isoformat(),
+                    "title": title, "webinar_url": url, "email": email, "scheduled_at": rec_dt.isoformat(),
                     "duration_min": dur, "status": "pending", "timezone_name": zone, "delete_password": pw
                 }).execute()
-                st.success("예약 완료!")
+                st.success("예약이 정상적으로 등록되었습니다!")
                 st.rerun()
 
     st.markdown("---")
@@ -129,7 +136,7 @@ if menu == "📅 예약 및 현황":
             s_kst = pd.to_datetime(item['scheduled_at']).astimezone(KST)
             with st.expander(f"[{item['status'].upper()}] {item['title']} | 시작: {s_kst.strftime('%m-%d %H:%M')}"):
                 st.write(f"🔗 URL: {item['webinar_url']}")
-                st.markdown(f"🚀 **KST 시작:** {s_kst.strftime('%Y-%m-%d %H:%M')}")
+                st.markdown(f"🚀 **한국 녹화 시작:** {s_kst.strftime('%Y-%m-%d %H:%M')}")
                 if item.get('failure_reason'):
                     st.error(f"🚨 에러 원인: {item['failure_reason']}")
                 if st.button("🗑️ 삭제", key=f"del_{item['id']}"):
@@ -138,7 +145,7 @@ if menu == "📅 예약 및 현황":
 
 # --- 5. [메뉴 2] 녹화 완료 파일 ---
 elif menu == "🎥 녹화 완료 파일":
-    st.markdown(f'# 🎥 녹화 결과 관리 <span class="version-text">v1.4.3</span>', unsafe_allow_html=True)
+    st.markdown(f'# 🎥 녹화 결과 관리 <span class="version-text">v1.4.4</span>', unsafe_allow_html=True)
     show_caution_notice()
     
     res = supabase.table("webinar_reservations").select("*").order("created_at", desc=True).execute()
@@ -163,7 +170,6 @@ elif menu == "🎥 녹화 완료 파일":
                     with c3:
                         if item['status'] == "completed" and item.get('video_url'):
                             response = requests.get(item['video_url'])
-                            # [중요] mime 타입을 지정하여 .bin 저장을 방지함
                             st.download_button(
                                 label="💾 노트북 저장", 
                                 data=response.content, 
