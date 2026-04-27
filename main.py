@@ -5,121 +5,119 @@ import pandas as pd
 from datetime import datetime
 from firebase_admin import credentials, storage, initialize_app, _apps
 from supabase import create_client
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
-# --- 1. 기본 환경 설정 ---
+# --- 기본 환경 설정 ---
 BUCKET_NAME = "webinar-recordings-plant-ti" 
 KST = pytz.timezone('Asia/Seoul')
 
-# 서비스 연결 초기화 (Firebase & Supabase)
 if not _apps:
     info = json.loads(os.getenv("FIREBASE_SERVICE_ACCOUNT"), strict=False)
-    initialize_app(credentials.Certificate(info), {
-        'storageBucket': f"{BUCKET_NAME}.appspot.com"
-    })
+    initialize_app(credentials.Certificate(info), {'storageBucket': f"{BUCKET_NAME}.appspot.com"})
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 bucket = storage.bucket(BUCKET_NAME)
 
 def run_recorder():
     now_utc = datetime.now(pytz.utc)
-    print(f"[{datetime.now(KST)}] 녹화 스케줄러 가동 중...")
-
-    # 대기 중인 예약 작업 조회
     res = supabase.table("webinar_reservations").select("*").in_("status", ["pending", "trigger"]).execute()
     
-    if not res.data:
-        return
-
     for job in res.data:
-        # DB의 예약 시간을 UTC로 변환하여 현재와 비교
         sched_utc = pd.to_datetime(job['scheduled_at']).astimezone(pytz.utc)
         
         if now_utc >= sched_utc:
-            print(f"🎬 녹화 시작 대상: {job['title']}")
-            # 상태 업데이트: 진행 중(running)
             supabase.table("webinar_reservations").update({"status": "running"}).eq("id", job['id']).execute()
+            # 기본 실패 사유 설정
+            failure_reason = "알 수 없는 시스템 오류"
             
             try:
                 with sync_playwright() as p:
-                    # 브라우저 실행 (Headless 모드)
+                    # 봇 감지 회피용 스텔스 설정
+                    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                     browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
-                    context = browser.new_context(
-                        viewport={'width': 854, 'height': 480},
-                        record_video_dir="/tmp/videos/",
-                        record_video_size={'width': 854, 'height': 480}
-                    )
+                    context = browser.new_context(user_agent=user_agent, viewport={'width': 1280, 'height': 720}, record_video_dir="/tmp/videos/")
                     page = context.new_page()
                     
-                    # 사이트 접속
-                    print(f"🔗 접속 URL: {job['webinar_url']}")
-                    page.goto(job['webinar_url'], wait_until="networkidle", timeout=90000)
-                    
-                    # [지능형 3단계 시간차 클릭 로직] 사용자 지침 반영
-                    # 이메일 주소 및 플레이 버튼을 5초 간격으로 총 3회 집요하게 클릭합니다.
-                    targets = ["Play", "재생", "Join", "참가", "Confirm", "확인", "Enter", "입장", "OK"]
+                    # 1. 사이트 접속 및 초기 로딩 대기 (사용자 제보: 5초 이상 소요)
+                    print(f"🔗 접속 시도: {job['webinar_url']}")
+                    try:
+                        page.goto(job['webinar_url'], wait_until="networkidle", timeout=120000)
+                        print("⏳ 화면 로딩 대기 (10초)...")
+                        page.wait_for_timeout(10000) # 넉넉하게 10초 대기
+                    except PlaywrightTimeoutError:
+                        failure_reason = "접속 실패: 사이트가 120초 이내에 응답하지 않았습니다 (네트워크 타임아웃)."
+                        raise Exception(failure_reason)
+
+                    # 2. 로봇 감지 여부 선제 확인
+                    if "captcha" in page.content().lower() or "forbidden" in page.content().lower():
+                        failure_reason = "로봇 감지: 사이트 보안 정책이 자동 접속을 차단했습니다."
+                        raise Exception(failure_reason)
+
+                    # 3. [강화] 중앙 삼각형 플레이 버튼 정밀 클릭 로직
+                    click_success = False
+                    # 사용자 제보: 가운데 삼각형 모양 아이콘 타겟팅
+                    play_selectors = [
+                        "button[aria-label*='Play']", 
+                        "button[aria-label*='재생']",
+                        ".vjs-big-play-button",  # Video.js 표준 버튼
+                        "svg polygon",           # 삼각형 모양 아이콘 직접 선택
+                        ".play-icon", 
+                        "button:has-text('Join')", 
+                        "button:has-text('Confirm')"
+                    ]
                     
                     for i in range(1, 4):
                         print(f"🖱️ {i}차 클릭 시도 중...")
-                        page.wait_for_timeout(5000) # 5초 대기
                         
-                        # (A) 이메일 입력창 주변의 확인 버튼 타격
+                        # (A) 중앙 삼각형 아이콘 직접 좌표 클릭 시도 (가장 확실함)
                         try:
-                            email_input = page.query_selector("input[type='email'], input[value*='@']")
-                            if email_input:
-                                btn = email_input.evaluate_handle("el => el.closest('div, form').querySelector('button, input[type=\"submit\"]')")
-                                if btn: 
-                                    btn.as_element().click()
-                                    print("✅ 이메일 인접 확인 버튼 클릭 성공")
+                            # 화면 중앙 좌표 계산
+                            viewport = page.viewport_size
+                            page.mouse.click(viewport['width'] / 2, viewport['height'] / 2)
+                            print("✅ 화면 중앙 좌표 클릭 수행")
                         except: pass
 
-                        # (B) 화면 내 텍스트 기반 버튼 탐색 및 클릭
-                        for t in targets:
+                        # (B) 셀렉터 기반 클릭
+                        for selector in play_selectors:
                             try:
-                                btn = page.get_by_role("button", name=t, exact=False)
-                                if btn.is_visible(): 
-                                    btn.click()
-                                    print(f"✅ 버튼 클릭 성공: {t}")
+                                target = page.query_selector(selector)
+                                if target and target.is_visible():
+                                    target.click()
+                                    print(f"✅ 버튼 클릭 성공: {selector}")
+                                    click_success = True
+                                    break
                             except: continue
+                        
+                        if click_success: break
+                        page.wait_for_timeout(5000) # 실패 시 5초 후 재시도
 
-                        # (C) 중앙 플레이 아이콘(SVG/삼각형) 강제 클릭
-                        try:
-                            page.click("svg, .vjs-big-play-button, .play-icon", timeout=3000)
-                            print("✅ 플레이 아이콘(SVG) 클릭 시도 완료")
-                        except: pass
+                    if not click_success:
+                        print("⚠️ 경고: 플레이 버튼을 찾지 못했습니다. 화면이 멈춰있을 수 있습니다.")
+                        # 여기서 중단하지 않고 일단 녹화는 진행 (증거 수집용)
 
-                    # 지정된 시간만큼 녹화 유지
-                    print(f"⏱️ 녹화 진행 중... ({job['duration_min']}분)")
+                    # 4. 녹화 진행
                     page.wait_for_timeout(job['duration_min'] * 60 * 1000)
                     
-                    # 영상 파일 저장 경로 획득 및 브라우저 종료
-                    video_tmp_path = page.video.path()
+                    video_path = page.video.path()
                     browser.close()
                     
-                    # Firebase Storage 업로드
+                    # Firebase 업로드 및 성공 보고
                     blob = bucket.blob(f"recordings/{job['title']}_{job['id']}.webm")
-                    blob.upload_from_filename(video_tmp_path)
-                    
-                    # [보안 지침 반영] make_public() 제거 및 직접 접근 URL 생성
-                    # Google Cloud의 '균일한 버킷 수준 액세스' 설정에 맞춘 방식입니다.
+                    blob.upload_from_filename(video_path)
                     video_url = f"https://storage.googleapis.com/{BUCKET_NAME}/recordings/{job['title']}_{job['id']}.webm"
                     
-                    # 성공 시 DB 업데이트
                     supabase.table("webinar_reservations").update({
                         "status": "completed",
                         "video_url": video_url,
-                        "is_downloaded": False,
-                        "failure_reason": None
+                        "failure_reason": "녹화 완료 (클릭 성공 여부: " + ("성공" if click_success else "실패/미확인") + ")"
                     }).eq("id", job['id']).execute()
-                    print(f"✅ {job['title']} 녹화 및 업로드 완료")
 
             except Exception as e:
-                # 실패 시 원인 기록
-                error_msg = str(e)
-                print(f"❌ 녹화 실패 원인 기록: {error_msg}")
+                err_msg = str(e)
+                print(f"❌ 녹화 중단: {err_msg}")
                 supabase.table("webinar_reservations").update({
                     "status": "error",
-                    "failure_reason": error_msg
+                    "failure_reason": err_msg
                 }).eq("id", job['id']).execute()
 
 if __name__ == "__main__":

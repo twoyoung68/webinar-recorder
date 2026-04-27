@@ -33,3 +33,14 @@
 
 5. 데이터베이스(Supabase) 필수 컬럼
 title, webinar_url, email, scheduled_at, duration_min, status, video_url, is_downloaded, delete_password, failure_reason.
+
+
+
+모든 코드 수정 시 파일 최상단에 **버전 정보(vX.X.X)**와 수정 날짜, 주요 변경 사항을 주석으로 명시할 것.
+
+이전 버전의 핵심 기능(마스터 비번 1207, KST 시간 변환, 안전 체크박스, 노트북 직접 저장)은 삭제하지 않고 유지하며 버전업할 것.
+
+에러 발생 시 에러 코드가 아닌 사용자가 이해할 수 있는 한글 메시지를 failure_reason에 기록할 것.
+
+
+
