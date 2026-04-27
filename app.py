@@ -1,7 +1,7 @@
 # ==========================================
 # SYSTEM: Plant TI Team Webinar Recorder
-# VERSION: v1.3.0 (2026-04-27) - Recovery
-# DESCRIPTION: Fixed data visibility & KST Time Sync with Version UI
+# VERSION: v1.4.2 (2026-04-27)
+# DESCRIPTION: Added Recording Protection Caution Notice
 # ==========================================
 
 import streamlit as st
@@ -33,10 +33,12 @@ if dark_mode:
     bg, txt, sub = "#0e1117", "#FFFFFF", "#B0B0B0"
     pt = "#4dabff"
     box = "#2d3748"
+    caution_bg, caution_border = "#2b1b1b", "#ff4b4b"
 else:
     bg, txt, sub = "#FFFFFF", "#1A1A1A", "#555555"
     pt = "#000080"
     box = "#F0F7FF"
+    caution_bg, caution_border = "#fff5f5", "#ff4b4b"
 
 st.markdown(f"""
     <style>
@@ -44,18 +46,37 @@ st.markdown(f"""
     div[data-testid="stRadio"] label p {{ font-size: 30px !important; font-weight: 800 !important; color: {pt} !important; }}
     .time-box {{ background-color: {box}; padding: 15px; border-radius: 10px; border: 2px solid {pt}; margin: 10px 0; }}
     .kst-highlight {{ color: #FF5733; font-weight: 900; font-size: 22px; }}
-    .status-tag {{ font-weight: 800; padding: 3px 8px; border-radius: 4px; }}
-    /* 버전 텍스트 스타일 */
     .version-text {{ font-size: 14px !important; font-weight: normal !important; color: gray !important; vertical-align: bottom; margin-left: 10px; }}
+    /* 주의사항 박스 스타일 */
+    .caution-container {{
+        background-color: {caution_bg};
+        border: 2px solid {caution_border};
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 25px;
+        color: {txt};
+    }}
+    .caution-title {{ color: #ff4b4b; font-weight: 900; font-size: 18px; margin-bottom: 5px; }}
     </style>
 """, unsafe_allow_html=True)
+
+# 주의사항 출력 함수
+def show_caution_notice():
+    st.markdown(f"""
+        <div class="caution-container">
+            <div class="caution-title">⚠️ 필독: 녹화 제한 안내</div>
+            <div style="font-size: 15px; font-weight: 600;">
+                보안 정책 및 <b>녹화 방지 기술(DRM, 화면 캡처 차단 등)</b>이 적용된 웹사이트는 시스템상 녹화가 불가능하거나 검은 화면으로 저장될 수 있습니다. 
+                중요한 세미나의 경우 사전에 테스트 녹화를 권장합니다.
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 # --- 3. 사이드바 ---
 st.sidebar.markdown("### 🏗️ Daewoo E&C")
-# 사이드바에 버전 표시 추가
-st.sidebar.markdown('#### Plant TI Team Webinar <span class="version-text">v1.3.0</span>', unsafe_allow_html=True)
+st.sidebar.markdown('#### Plant TI Team <span class="version-text">v1.4.2</span>', unsafe_allow_html=True)
 st.sidebar.markdown("---")
 admin_input = st.sidebar.text_input("Master Password", type="password")
 is_admin = (admin_input == MASTER_PASSWORD)
@@ -63,8 +84,10 @@ menu = st.sidebar.radio("메뉴 선택", ["📅 예약 및 현황", "🎥 녹화
 
 # --- 4. [메뉴 1] 예약 및 현황 ---
 if menu == "📅 예약 및 현황":
-    # 메인 타이틀 옆에 버전 표시 추가
-    st.markdown('# 📅 글로벌 웨비나 예약 및 현황 <span class="version-text">v1.3.0</span>', unsafe_allow_html=True)
+    st.markdown('# 📅 웨비나 예약 현황 <span class="version-text">v1.4.2</span>', unsafe_allow_html=True)
+    
+    # 최상단 주의사항 배치
+    show_caution_notice()
     
     with st.container(border=True):
         st.subheader("📝 신규 예약")
@@ -94,7 +117,7 @@ if menu == "📅 예약 및 현황":
         """, unsafe_allow_html=True)
         
         st.markdown("---")
-        chk = st.checkbox("✅ 정보가 정확함을 확인했습니다.")
+        chk = st.checkbox("✅ 정보 및 주의사항을 모두 확인했습니다.")
         if st.button("🚀 예약 확정", use_container_width=True):
             if chk and title and url:
                 supabase.table("webinar_reservations").insert({
@@ -123,7 +146,10 @@ if menu == "📅 예약 및 현황":
 
 # --- 5. [메뉴 2] 녹화 완료 파일 ---
 elif menu == "🎥 녹화 완료 파일":
-    st.markdown('# 🎥 녹화 결과 관리 <span class="version-text">v1.3.0</span>', unsafe_allow_html=True)
+    st.markdown('# 🎥 녹화 결과 관리 <span class="version-text">v1.4.2</span>', unsafe_allow_html=True)
+    
+    # 결과 창에도 주의사항 배치
+    show_caution_notice()
     
     res = supabase.table("webinar_reservations").select("*").order("created_at", desc=True).execute()
     
@@ -156,7 +182,7 @@ elif menu == "🎥 녹화 완료 파일":
                     
                     if is_admin:
                         if st.button("🗑️ 영구 삭제", key=f"adm_f_{item['id']}"):
-                            supabase.table("webinar_reservations").delete().eq("id", item['id']).execute()
+                            supabase.table("webinar_reservations").delete().eq("id", id).execute()
                             st.rerun()
     if not found_data:
         st.info("표시할 녹화 기록이 없습니다.")
