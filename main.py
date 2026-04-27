@@ -1,7 +1,7 @@
 # ==========================================
 # SYSTEM: Plant TI Team Webinar Recorder
-# VERSION: v1.3.0 (2026-04-27)
-# DESCRIPTION: Stable logic & Diagnosis Recording
+# VERSION: v1.3.0 (2026-04-28)
+# DESCRIPTION: Stable Logic & Coordinate-based Clicking
 # ==========================================
 
 import os, json, pytz, pandas as pd
@@ -32,41 +32,55 @@ def run_recorder():
             
             try:
                 with sync_playwright() as p:
-                    # [안정화] 기본 브라우저 설정
+                    # 사람처럼 보이기 위한 브라우저 설정
+                    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                     browser = p.chromium.launch(headless=True, args=['--no-sandbox'])
-                    context = browser.new_context(viewport={'width': 854, 'height': 480}, record_video_dir="/tmp/videos/")
+                    context = browser.new_context(
+                        user_agent=user_agent,
+                        viewport={'width': 854, 'height': 480}, 
+                        record_video_dir="/tmp/videos/"
+                    )
                     page = context.new_page()
                     
+                    # 접속 및 넉넉한 대기
                     page.goto(job['webinar_url'], wait_until="networkidle", timeout=100000)
-                    page.wait_for_timeout(10000) # 로딩 대기
+                    page.wait_for_timeout(10000) 
 
-                    # 지능형 클릭 (3회 시도)
+                    # [지능형 3회 클릭 시도]
                     for i in range(1, 4):
                         page.wait_for_timeout(5000)
                         try:
-                            # 1. 중앙 좌표 클릭
+                            # (A) 중앙 좌표 클릭 (삼각형 재생 버튼 타격)
                             page.mouse.click(427, 240)
-                            # 2. 버튼 탐색 클릭
-                            for t in ["Play", "재생", "Join", "참가", "Confirm", "확인"]:
+                            # (B) 텍스트 기반 버튼 탐색 클릭
+                            for t in ["Play", "재생", "Join", "참가", "Confirm", "확인", "Enter", "입장"]:
                                 btn = page.get_by_role("button", name=t, exact=False)
-                                if btn.is_visible(): btn.click()
+                                if btn.is_visible(): 
+                                    btn.click()
                         except: pass
 
+                    # 지정 시간만큼 녹화
                     page.wait_for_timeout(job['duration_min'] * 60 * 1000)
                     path = page.video.path()
                     browser.close()
                     
+                    # Firebase Storage 업로드
                     blob = bucket.blob(f"recordings/{job['title']}_{job['id']}.webm")
                     blob.upload_from_filename(path)
                     
+                    # 결과 URL 생성 (ACL 에러 방지 방식)
                     video_url = f"https://storage.googleapis.com/{BUCKET_NAME}/recordings/{job['title']}_{job['id']}.webm"
+                    
                     supabase.table("webinar_reservations").update({
-                        "status": "completed", "video_url": video_url, "failure_reason": None
+                        "status": "completed", 
+                        "video_url": video_url, 
+                        "failure_reason": None
                     }).eq("id", job['id']).execute()
 
             except Exception as e:
                 supabase.table("webinar_reservations").update({
-                    "status": "error", "failure_reason": str(e)
+                    "status": "error", 
+                    "failure_reason": str(e)
                 }).eq("id", job['id']).execute()
 
 if __name__ == "__main__":

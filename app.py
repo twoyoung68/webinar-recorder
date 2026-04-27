@@ -1,7 +1,8 @@
 # ==========================================
 # SYSTEM: Plant TI Team Webinar Recorder
-# VERSION: v1.4.2 (2026-04-27)
-# DESCRIPTION: Added Recording Protection Caution Notice
+# VERSION: v1.4.3 (2026-04-28)
+# DESCRIPTION: Fixed .bin Download Bug & Added Caution Notice
+# UPDATED BY: Gemini Assistant (Based on v1.3.0 Stable)
 # ==========================================
 
 import streamlit as st
@@ -15,7 +16,7 @@ from datetime import datetime
 # --- 1. 환경 설정 ---
 st.set_page_config(page_title="Plant TI Team Webinar Recorder", page_icon="🎥", layout="wide")
 KST = pytz.timezone('Asia/Seoul')
-MASTER_PASSWORD = "1207" # 지침: 내부 고정
+MASTER_PASSWORD = "1207" # 플랜트TI 팀 고정 지침
 
 WORLD_ZONES = {
     "대한민국 (KST)": "Asia/Seoul",
@@ -47,14 +48,9 @@ st.markdown(f"""
     .time-box {{ background-color: {box}; padding: 15px; border-radius: 10px; border: 2px solid {pt}; margin: 10px 0; }}
     .kst-highlight {{ color: #FF5733; font-weight: 900; font-size: 22px; }}
     .version-text {{ font-size: 14px !important; font-weight: normal !important; color: gray !important; vertical-align: bottom; margin-left: 10px; }}
-    /* 주의사항 박스 스타일 */
     .caution-container {{
-        background-color: {caution_bg};
-        border: 2px solid {caution_border};
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 25px;
-        color: {txt};
+        background-color: {caution_bg}; border: 2px solid {caution_border};
+        padding: 15px; border-radius: 10px; margin-bottom: 25px; color: {txt};
     }}
     .caution-title {{ color: #ff4b4b; font-weight: 900; font-size: 18px; margin-bottom: 5px; }}
     </style>
@@ -76,7 +72,7 @@ supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 # --- 3. 사이드바 ---
 st.sidebar.markdown("### 🏗️ Daewoo E&C")
-st.sidebar.markdown('#### Plant TI Team <span class="version-text">v1.4.2</span>', unsafe_allow_html=True)
+st.sidebar.markdown(f'#### Plant TI Team <span class="version-text">v1.4.3</span>', unsafe_allow_html=True)
 st.sidebar.markdown("---")
 admin_input = st.sidebar.text_input("Master Password", type="password")
 is_admin = (admin_input == MASTER_PASSWORD)
@@ -84,13 +80,11 @@ menu = st.sidebar.radio("메뉴 선택", ["📅 예약 및 현황", "🎥 녹화
 
 # --- 4. [메뉴 1] 예약 및 현황 ---
 if menu == "📅 예약 및 현황":
-    st.markdown('# 📅 웨비나 예약 현황 <span class="version-text">v1.4.2</span>', unsafe_allow_html=True)
-    
-    # 최상단 주의사항 배치
+    st.markdown(f'# 📅 웨비나 예약 현황 <span class="version-text">v1.4.3</span>', unsafe_allow_html=True)
     show_caution_notice()
     
     with st.container(border=True):
-        st.subheader("📝 신규 예약")
+        st.subheader("📝 신규 녹화 예약")
         title = st.text_input("1. 웨비나 명칭")
         url = st.text_input("2. 접속 URL")
         c1, c2 = st.columns(2)
@@ -103,8 +97,8 @@ if menu == "📅 예약 및 현황":
         
         t_tz = pytz.timezone(WORLD_ZONES[zone])
         col_d, col_t = st.columns(2)
-        with col_d: d_in = st.date_input("7. 현지 날짜")
-        with col_t: t_in = st.time_input("8. 현지 시각")
+        with col_d: d_in = st.date_input("7. 녹화 시작 날짜 (현지 기준)")
+        with col_t: t_in = st.time_input("8. 녹화 시작 시각 (현지 기준)")
         
         l_dt = t_tz.localize(datetime.combine(d_in, t_in))
         k_dt = l_dt.astimezone(KST)
@@ -133,11 +127,9 @@ if menu == "📅 예약 및 현황":
     if res.data:
         for item in res.data:
             s_kst = pd.to_datetime(item['scheduled_at']).astimezone(KST)
-            c_kst = pd.to_datetime(item['created_at']).astimezone(KST)
             with st.expander(f"[{item['status'].upper()}] {item['title']} | 시작: {s_kst.strftime('%m-%d %H:%M')}"):
                 st.write(f"🔗 URL: {item['webinar_url']}")
                 st.markdown(f"🚀 **KST 시작:** {s_kst.strftime('%Y-%m-%d %H:%M')}")
-                st.write(f"📝 **신청 시각(KST):** {c_kst.strftime('%Y-%m-%d %H:%M')}")
                 if item.get('failure_reason'):
                     st.error(f"🚨 에러 원인: {item['failure_reason']}")
                 if st.button("🗑️ 삭제", key=f"del_{item['id']}"):
@@ -146,30 +138,23 @@ if menu == "📅 예약 및 현황":
 
 # --- 5. [메뉴 2] 녹화 완료 파일 ---
 elif menu == "🎥 녹화 완료 파일":
-    st.markdown('# 🎥 녹화 결과 관리 <span class="version-text">v1.4.2</span>', unsafe_allow_html=True)
-    
-    # 결과 창에도 주의사항 배치
+    st.markdown(f'# 🎥 녹화 결과 관리 <span class="version-text">v1.4.3</span>', unsafe_allow_html=True)
     show_caution_notice()
     
     res = supabase.table("webinar_reservations").select("*").order("created_at", desc=True).execute()
     
-    found_data = False
     if res.data:
         for item in res.data:
             if item['status'] in ["completed", "error", "running"]:
-                found_data = True
-                s_kst = pd.to_datetime(item['scheduled_at']).astimezone(pytz.timezone('Asia/Seoul'))
+                s_kst = pd.to_datetime(item['scheduled_at']).astimezone(KST)
                 with st.container(border=True):
                     c1, c2, c3 = st.columns([4, 1, 1])
                     with c1:
                         st.subheader(f"📺 {item['title']}")
                         st.write(f"📅 녹화 시각(KST): {s_kst.strftime('%Y-%m-%d %H:%M')}")
-                        if item['status'] == "completed":
-                            st.success("✅ 녹화 성공")
-                        elif item['status'] == "running":
-                            st.info("⏺️ 녹화 진행 중...")
-                        else:
-                            st.error(f"❌ 실패 원인: {item.get('failure_reason', '알 수 없는 에러')}")
+                        if item['status'] == "completed": st.success("✅ 녹화 성공")
+                        elif item['status'] == "running": st.info("⏺️ 녹화 진행 중...")
+                        else: st.error(f"❌ 실패 원인: {item.get('failure_reason', '알 수 없는 에러')}")
                     
                     with c2:
                         if item['status'] == "completed" and st.button("📥 수령 확인", key=f"chk_{item['id']}"):
@@ -178,11 +163,11 @@ elif menu == "🎥 녹화 완료 파일":
                     with c3:
                         if item['status'] == "completed" and item.get('video_url'):
                             response = requests.get(item['video_url'])
-                            st.download_button(label="💾 노트북 저장", data=response.content, file_name=f"{item['title']}.webm", key=f"dl_{item['id']}")
-                    
-                    if is_admin:
-                        if st.button("🗑️ 영구 삭제", key=f"adm_f_{item['id']}"):
-                            supabase.table("webinar_reservations").delete().eq("id", id).execute()
-                            st.rerun()
-    if not found_data:
-        st.info("표시할 녹화 기록이 없습니다.")
+                            # [중요] mime 타입을 지정하여 .bin 저장을 방지함
+                            st.download_button(
+                                label="💾 노트북 저장", 
+                                data=response.content, 
+                                file_name=f"{item['title']}.webm", 
+                                mime="video/webm",
+                                key=f"dl_{item['id']}"
+                            )
