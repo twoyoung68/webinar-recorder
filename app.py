@@ -9,7 +9,7 @@ from datetime import datetime
 # --- 1. 페이지 및 환경 설정 ---
 st.set_page_config(page_title="Plant TI Team Webinar Recorder", page_icon="🎥", layout="wide")
 KST = pytz.timezone('Asia/Seoul')
-MASTER_PASSWORD = "1207" 
+MASTER_PASSWORD = "1207" # 지침: 내부 고정
 
 WORLD_ZONES = {
     "대한민국 (KST)": "Asia/Seoul",
@@ -45,10 +45,16 @@ st.markdown(f"""
     .preview-kst {{ color: #FF5733; font-weight: 900; font-size: 24px; }}
     .kst-label {{ color: #28a745; font-weight: 800; font-size: 16px; }}
     .error-reason-box {{ background-color: {err_bg}; color: {err_text}; padding: 12px; border-radius: 8px; border-left: 5px solid {err_text}; margin: 10px 0; font-size: 14px; font-weight: 600; }}
+    .list-kst-info {{ color: #FF5733; font-weight: 800; font-size: 16px; }}
+    .list-created-info {{ color: #28a745; font-weight: 700; font-size: 14px; }}
     </style>
 """, unsafe_allow_html=True)
 
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+@st.cache_resource
+def init_connection():
+    return create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+
+supabase = init_connection()
 
 # --- 3. 사이드바 ---
 st.sidebar.markdown("## 🏗️ Daewoo E&C")
@@ -61,6 +67,11 @@ with st.sidebar.expander("🔐 관리자 전용"):
 st.sidebar.markdown('---')
 menu = st.sidebar.radio("Menu Selection", ["📅 예약 및 현황", "🎥 녹화 영상"], index=0)
 
+if menu == "🎥 녹화 영상":
+    st.sidebar.markdown('<div class="menu-focus-box">🎥<br>녹화<br>영상</div>', unsafe_allow_html=True)
+else:
+    st.sidebar.markdown('<div class="menu-focus-box" style="border-color:#004a99; color:#004a99; background-color:#F0F7FF;">📅<br>예약<br>현황</div>', unsafe_allow_html=True)
+
 # --- 4. [메뉴 1] 예약 및 현황 ---
 if menu == "📅 예약 및 현황":
     st.title("📅 글로벌 웨비나 예약 및 현황")
@@ -68,7 +79,6 @@ if menu == "📅 예약 및 현황":
         st.subheader("📝 신규 녹화 예약")
         webinar_title = st.text_input("1. 웨비나 명칭")
         webinar_url = st.text_input("2. 웨비나 접속 URL")
-        
         c_mail, c_pw = st.columns(2)
         with c_mail: user_email = st.text_input("3. 확인용 이메일 주소")
         with c_pw: del_pw = st.text_input("4. 삭제 비밀번호", type="password")
@@ -80,9 +90,8 @@ if menu == "📅 예약 및 현황":
         target_tz = pytz.timezone(WORLD_ZONES[selected_zone])
         col_d, col_t = st.columns(2)
         with col_d: l_date = st.date_input("7. 현지 시작 날짜", datetime.now(target_tz).date())
-        with col_t: l_time = st.time_input("8. 현지 시작 시각", value=datetime.now(target_tz).time(), key="time_master_kst")
+        with col_t: l_time = st.time_input("8. 현지 시작 시각", value=datetime.now(target_tz).time(), key="reservation_time_ui")
 
-        # 시간 로직: 현지 시각 -> 한국 시각(KST) 변환
         localized_dt = target_tz.localize(datetime.combine(l_date, l_time))
         kst_preview = localized_dt.astimezone(KST)
         
@@ -95,7 +104,7 @@ if menu == "📅 예약 및 현황":
         """, unsafe_allow_html=True)
 
         st.markdown("---")
-        confirm_check = st.checkbox("✅ 위 정보와 한국 시작 시각이 정확함을 최종 확인했습니다.")
+        confirm_check = st.checkbox("✅ 이메일 및 한국 시작 시각 정보가 정확함을 최종 확인했습니다.")
         if st.button("🚀 예약 확정 (Schedule Now)", use_container_width=True):
             if not confirm_check: st.warning("⚠️ '최종 확인' 체크박스를 선택해야 예약이 완료됩니다.")
             elif webinar_title and webinar_url and del_pw:
@@ -104,7 +113,7 @@ if menu == "📅 예약 및 현황":
                     "scheduled_at": localized_dt.isoformat(), "duration_min": duration,
                     "status": "pending", "timezone_name": selected_zone, "delete_password": del_pw, "is_downloaded": False
                 }).execute()
-                st.success("✅ 예약 완료!")
+                st.success("✅ 예약 성공!")
                 st.rerun()
 
     st.markdown("---")
@@ -115,21 +124,37 @@ if menu == "📅 예약 및 현황":
         for item in res.data:
             tz_n = item.get('timezone_name', '대한민국 (KST)')
             local_tz = pytz.timezone(WORLD_ZONES.get(tz_n, 'Asia/Seoul'))
-            # DB 저장된 시각을 현지 시각과 KST로 각각 변환
-            sched_utc = pd.to_datetime(item['scheduled_at'])
-            sched_local = sched_utc.astimezone(local_tz)
-            sched_kst = sched_utc.astimezone(KST)
             
-            with st.expander(f"[{item['status'].upper()}] {item['title']} | KST 시작: {sched_kst.strftime('%m-%d %H:%M')}"):
+            sched_utc = pd.to_datetime(item['scheduled_at'])
+            sched_kst = sched_utc.astimezone(KST)
+            sched_local = sched_utc.astimezone(local_tz)
+            
+            created_utc = pd.to_datetime(item['created_at'])
+            created_kst = created_utc.astimezone(KST)
+            
+            status_icon = "⏳" if item['status'] == "pending" else "⏺️" if item['status'] == "running" else "✅"
+            
+            with st.expander(f"{status_icon} {item['title']} | KST 시작: {sched_kst.strftime('%m-%d %H:%M')}"):
+                # [수정 완료] col_i, col_d로 변수명 통일
                 col_i, col_d = st.columns([4, 1])
                 with col_i:
                     st.write(f"🔗 **URL:** {item['webinar_url']}")
-                    st.write(f"🌍 **현지 시작:** {sched_local.strftime('%Y-%m-%d %H:%M')} ({tz_n})")
-                    st.markdown(f"✅ **실제 녹화 시작 (KST):** <span style='color:#FF5733; font-weight:800;'>{sched_kst.strftime('%Y-%m-%d %H:%M')}</span>", unsafe_allow_html=True)
+                    st.write(f"🌍 **현지 시작 시각:** {sched_local.strftime('%Y-%m-%d %H:%M')} ({tz_n})")
+                    st.markdown(f"🚀 **실제 녹화 시작 (KST):** <span class='list-kst-info'>{sched_kst.strftime('%Y-%m-%d %H:%M')}</span>", unsafe_allow_html=True)
+                    st.markdown(f"📝 **예약 수행 시각 (KST):** <span class='list-created-info'>{created_kst.strftime('%Y-%m-%d %H:%M')}</span>", unsafe_allow_html=True)
+                    if item.get('failure_reason'):
+                        st.markdown(f'<div class="error-reason-box">🚨 실패 원인: {item["failure_reason"]}</div>', unsafe_allow_html=True)
                 with col_d:
-                    if st.button("🗑️ 삭제", key=f"del_{item['id']}"):
-                        supabase.table("webinar_reservations").delete().eq("id", item['id']).execute()
-                        st.rerun()
+                    if is_admin:
+                        if st.button("🗑️ 삭제", key=f"adm_del_{item['id']}"):
+                            supabase.table("webinar_reservations").delete().eq("id", item['id']).execute()
+                            st.rerun()
+                    else:
+                        pw_in = st.text_input("비번", type="password", key=f"pw_{item['id']}")
+                        if st.button("🗑️ 삭제", key=f"del_{item['id']}"):
+                            if pw_in == item.get('delete_password'):
+                                supabase.table("webinar_reservations").delete().eq("id", item['id']).execute()
+                                st.rerun()
 
 # --- 5. [메뉴 2] 녹화 영상 ---
 elif menu == "🎥 녹화 영상":
@@ -139,11 +164,13 @@ elif menu == "🎥 녹화 영상":
     if res.data:
         for item in res.data:
             sched_kst = pd.to_datetime(item['scheduled_at']).astimezone(KST)
+            created_kst = pd.to_datetime(item['created_at']).astimezone(KST)
             with st.container(border=True):
                 c1, c2, c3 = st.columns([4, 1, 1])
                 with c1:
                     st.subheader(f"📺 {item['title']}")
-                    st.write(f"📅 **녹화 시각 (KST):** {sched_kst.strftime('%Y-%m-%d %H:%M')}")
+                    st.write(f"📅 **녹화 시작 (KST):** {sched_kst.strftime('%Y-%m-%d %H:%M')}")
+                    st.write(f"📝 **예약 수행 (KST):** {created_kst.strftime('%Y-%m-%d %H:%M')}")
                     if item['status'] == "completed":
                         st.markdown('<span style="background-color:#e8f5e9; color:#2e7d32; padding:5px 10px; border-radius:5px; font-weight:800;">✅ 녹화 성공</span>', unsafe_allow_html=True)
                     else:
@@ -158,8 +185,7 @@ elif menu == "🎥 녹화 영상":
                     if item['status'] == "completed" and item.get('video_url'):
                         response = requests.get(item['video_url'])
                         st.download_button(label="💾 노트북 저장", data=response.content, file_name=f"{item['title']}.webm", mime="video/webm", key=f"dl_{item['id']}")
-                
                 if is_admin:
-                    if st.button("🗑️ 영구 삭제 (관리자)", key=f"adm_f_{item['id']}"):
+                    if st.button("🗑️ 영구 삭제", key=f"adm_f_{item['id']}"):
                         supabase.table("webinar_reservations").delete().eq("id", item['id']).execute()
                         st.rerun()
