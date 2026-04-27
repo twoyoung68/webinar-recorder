@@ -1,7 +1,7 @@
 # ==========================================
 # SYSTEM: Plant TI Team Webinar Recorder
 # VERSION: v1.3.0 (2026-04-27) - Recovery
-# DESCRIPTION: Fixed data visibility & KST Time Sync
+# DESCRIPTION: Fixed data visibility & KST Time Sync with Version UI
 # ==========================================
 
 import streamlit as st
@@ -45,6 +45,8 @@ st.markdown(f"""
     .time-box {{ background-color: {box}; padding: 15px; border-radius: 10px; border: 2px solid {pt}; margin: 10px 0; }}
     .kst-highlight {{ color: #FF5733; font-weight: 900; font-size: 22px; }}
     .status-tag {{ font-weight: 800; padding: 3px 8px; border-radius: 4px; }}
+    /* 버전 텍스트 스타일 */
+    .version-text {{ font-size: 14px !important; font-weight: normal !important; color: gray !important; vertical-align: bottom; margin-left: 10px; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -52,7 +54,8 @@ supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 # --- 3. 사이드바 ---
 st.sidebar.markdown("### 🏗️ Daewoo E&C")
-st.sidebar.markdown("#### Plant TI Team Webinar")
+# 사이드바에 버전 표시 추가
+st.sidebar.markdown('#### Plant TI Team Webinar <span class="version-text">v1.3.0</span>', unsafe_allow_html=True)
 st.sidebar.markdown("---")
 admin_input = st.sidebar.text_input("Master Password", type="password")
 is_admin = (admin_input == MASTER_PASSWORD)
@@ -60,7 +63,9 @@ menu = st.sidebar.radio("메뉴 선택", ["📅 예약 및 현황", "🎥 녹화
 
 # --- 4. [메뉴 1] 예약 및 현황 ---
 if menu == "📅 예약 및 현황":
-    st.title("📅 글로벌 웨비나 예약 및 현황")
+    # 메인 타이틀 옆에 버전 표시 추가
+    st.markdown('# 📅 글로벌 웨비나 예약 및 현황 <span class="version-text">v1.3.0</span>', unsafe_allow_html=True)
+    
     with st.container(border=True):
         st.subheader("📝 신규 예약")
         title = st.text_input("1. 웨비나 명칭")
@@ -118,8 +123,8 @@ if menu == "📅 예약 및 현황":
 
 # --- 5. [메뉴 2] 녹화 완료 파일 ---
 elif menu == "🎥 녹화 완료 파일":
-    st.title("🎥 녹화 결과 관리")
-    # [수정] 모든 상태를 가져오되, 결과가 있는 것 위주로 정렬하여 데이터 유실 방지
+    st.markdown('# 🎥 녹화 결과 관리 <span class="version-text">v1.3.0</span>', unsafe_allow_html=True)
+    
     res = supabase.table("webinar_reservations").select("*").order("created_at", desc=True).execute()
     
     found_data = False
