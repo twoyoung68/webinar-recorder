@@ -1,7 +1,7 @@
 # ==========================================
 # SYSTEM: Plant TI Team Webinar Recorder
-# VERSION: v1.4.0 (2026-04-27)
-# DESCRIPTION: Renamed to Recording Time & Logic Fix
+# VERSION: v1.4.1 (2026-04-27)
+# DESCRIPTION: Fixed Time Input Reset Bug
 # ==========================================
 
 import streamlit as st
@@ -51,7 +51,6 @@ st.markdown(f"""
     .preview-kst {{ color: #FF5733; font-weight: 900; font-size: 24px; }}
     .kst-label {{ color: #28a745; font-weight: 800; font-size: 16px; }}
     .error-reason-box {{ background-color: {err_bg}; color: {err_text}; padding: 12px; border-radius: 8px; border-left: 5px solid {err_text}; margin: 10px 0; font-size: 14px; font-weight: 600; }}
-    .highlight-kst {{ color: #FF5733; font-weight: 800; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -60,7 +59,7 @@ supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
 # --- 3. 사이드바 구성 ---
 st.sidebar.markdown("## 🏗️ Daewoo E&C")
-st.sidebar.markdown(f'<p class="sidebar-main-title">Plant TI Team<br>Webinar Recorder <span class="version-tag">v1.4.0</span></p>', unsafe_allow_html=True)
+st.sidebar.markdown(f'<p class="sidebar-main-title">Plant TI Team<br>Webinar Recorder <span class="version-tag">v1.4.1</span></p>', unsafe_allow_html=True)
 
 st.sidebar.markdown('---')
 with st.sidebar.expander("🔐 관리자 전용"):
@@ -72,7 +71,7 @@ menu = st.sidebar.radio("메뉴 선택", ["📅 예약 및 현황", "🎥 녹화
 
 # --- 4. [메뉴 1] 예약 및 현황 ---
 if menu == "📅 예약 및 현황":
-    st.markdown(f'# 📅 웨비나 예약 현황 <span class="version-tag" style="font-size:16px;">v1.4.0</span>', unsafe_allow_html=True)
+    st.markdown(f'# 📅 웨비나 예약 현황 <span class="version-tag" style="font-size:16px;">v1.4.1</span>', unsafe_allow_html=True)
     
     with st.container(border=True):
         st.subheader("📝 신규 녹화 예약")
@@ -87,16 +86,20 @@ if menu == "📅 예약 및 현황":
         with c1: selected_zone = st.selectbox("5. 개최지 타임존", list(WORLD_ZONES.keys()))
         with c2: duration = st.number_input("6. 녹화 시간(분)", min_value=1, value=60)
             
-        # 변수명 변경: l_date, l_time -> rec_date, rec_time
         target_tz = pytz.timezone(WORLD_ZONES[selected_zone])
         col_d, col_t = st.columns(2)
         
-        # 기본값 설정: 노트북 시각으로 튕기는 현상 방지
-        default_now = datetime.now(target_tz)
-        with col_d: rec_date = st.date_input("7. 녹화 시작 날짜 (개최지 기준)", value=default_now.date())
-        with col_t: rec_time = st.time_input("8. 녹화 시작 시각 (개최지 기준)", value=default_now.time())
+        # [해결 핵심] 세션 내에서 한 번만 초기화하여 리셋 방지
+        if 'init_rec_dt' not in st.session_state:
+            st.session_state.init_rec_dt = datetime.now(target_tz)
 
-        # 녹화 시각 변환 (입력된 타임존 기준 -> KST)
+        # 사용자가 입력 필드를 직접 수정할 수 있도록 value를 안정적으로 관리
+        with col_d: 
+            rec_date = st.date_input("7. 녹화 시작 날짜 (개최지 기준)", value=st.session_state.init_rec_dt.date())
+        with col_t: 
+            rec_time = st.time_input("8. 녹화 시작 시각 (개최지 기준)", value=st.session_state.init_rec_dt.time())
+
+        # 녹화 시각 변환 (입력된 값 기준)
         rec_dt = target_tz.localize(datetime.combine(rec_date, rec_time))
         kst_preview = rec_dt.astimezone(KST)
         
@@ -115,7 +118,6 @@ if menu == "📅 예약 및 현황":
             if not confirm_check:
                 st.warning("⚠️ '최종 확인' 체크박스를 선택해야 예약이 완료됩니다.")
             elif webinar_title and webinar_url and del_pw:
-                # Supabase 저장 (기존 컬럼명 scheduled_at 유지)
                 supabase.table("webinar_reservations").insert({
                     "title": webinar_title, 
                     "webinar_url": webinar_url, 
@@ -129,18 +131,18 @@ if menu == "📅 예약 및 현황":
                 }).execute()
                 
                 st.success("✅ 예약이 성공적으로 등록되었습니다.")
-                st.rerun() # 성공 시 전체 페이지 새로고침으로 폼 초기화
+                # 성공 시 세션 초기값 삭제 및 새로고침
+                del st.session_state.init_rec_dt
+                st.rerun()
             else:
                 st.error("⚠️ 모든 필수 항목을 입력해 주세요.")
 
-    # 목록 표시
+    # 목록 표시 로직 (기존 v1.4.0과 동일)
     st.markdown("---")
     res = supabase.table("webinar_reservations").select("*").order("scheduled_at", desc=False).execute()
     if res.data:
         for item in res.data:
             s_kst = pd.to_datetime(item['scheduled_at']).astimezone(KST)
-            c_kst = pd.to_datetime(item['created_at']).astimezone(KST)
-            # 현지 녹화 시각 계산
             tz_n = item.get('timezone_name', '대한민국 (KST)')
             local_tz = pytz.timezone(WORLD_ZONES.get(tz_n, 'Asia/Seoul'))
             s_local = pd.to_datetime(item['scheduled_at']).astimezone(local_tz)
@@ -149,9 +151,8 @@ if menu == "📅 예약 및 현황":
                 col_i, col_d = st.columns([4, 1])
                 with col_i:
                     st.write(f"🔗 URL: {item['webinar_url']}")
-                    st.markdown(f"🌍 **현지 녹화 시각:** {s_local.strftime('%Y-%m-%d %H:%M')} ({tz_n})")
-                    st.markdown(f"🚀 **한국 녹화 시각:** <span class='highlight-kst'>{s_kst.strftime('%Y-%m-%d %H:%M')} (KST)</span>", unsafe_allow_html=True)
-                    st.write(f"📝 **예약 등록 시각:** {c_kst.strftime('%Y-%m-%d %H:%M')} (KST)")
+                    st.write(f"🌍 **현지 녹화 시각:** {s_local.strftime('%Y-%m-%d %H:%M')} ({tz_n})")
+                    st.markdown(f"🚀 **한국 녹화 시각:** <span style='color:#FF5733; font-weight:800;'>{s_kst.strftime('%Y-%m-%d %H:%M')} (KST)</span>", unsafe_allow_html=True)
                     if item.get('failure_reason'):
                         st.markdown(f'<div class="error-reason-box">🚨 실패 원인: {item["failure_reason"]}</div>', unsafe_allow_html=True)
                 with col_d:
@@ -159,7 +160,7 @@ if menu == "📅 예약 및 현황":
                         supabase.table("webinar_reservations").delete().eq("id", item['id']).execute()
                         st.rerun()
 
-# --- 5. [메뉴 2] 녹화 완료 파일 ---
+# --- 5. [메뉴 2] 녹화 완료 파일 (v1.4.0 유지) ---
 elif menu == "🎥 녹화 완료 파일":
     st.title("🎥 녹화 결과 관리")
     res = supabase.table("webinar_reservations").select("*").order("created_at", desc=True).execute()
@@ -175,7 +176,7 @@ elif menu == "🎥 녹화 완료 파일":
                         st.write(f"📅 녹화 시각(KST): {s_kst.strftime('%Y-%m-%d %H:%M')}")
                         if item['status'] == "completed": st.success("✅ 녹화 성공")
                         elif item['status'] == "running": st.info("⏺️ 녹화 진행 중...")
-                        else: st.error(f"❌ 실패: {item.get('failure_reason', '알 수 없는 에러')}")
+                        else: st.error(f"❌ 실패 원인: {item.get('failure_reason', '알 수 없는 에러')}")
                     
                     with c2:
                         if item['status'] == "completed" and st.button("📥 수령 확인", key=f"chk_{item['id']}"):
