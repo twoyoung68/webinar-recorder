@@ -1,7 +1,7 @@
 # ==========================================
 # SYSTEM: Plant TI Team Webinar Recorder
-# VERSION: v1.5.2 (2026-04-29)
-# DESCRIPTION: Iframe Penetration & Double Debug Screenshots
+# VERSION: v1.6.0 (2026-04-29)
+# DESCRIPTION: Universal Login Agent & Iframe Penetration
 # ==========================================
 
 import os, json, pytz, pandas as pd
@@ -10,6 +10,7 @@ from firebase_admin import credentials, storage, initialize_app, _apps
 from supabase import create_client
 from playwright.sync_api import sync_playwright
 
+# --- 설정 ---
 BUCKET_NAME = "webinar-recordings-plant-ti" 
 KST = pytz.timezone('Asia/Seoul')
 
@@ -29,6 +30,7 @@ def run_recorder():
         
         if now_utc >= sched_utc:
             supabase.table("webinar_reservations").update({"status": "running"}).eq("id", job['id']).execute()
+            shot1_url = ""
             
             try:
                 with sync_playwright() as p:
@@ -40,49 +42,77 @@ def run_recorder():
                     page.goto(job['webinar_url'], wait_until="networkidle", timeout=100000)
                     page.wait_for_timeout(10000) 
 
-                    # [v1.5.2] 진단용 스크린샷 1 (접속 직후)
-                    shot1_path = f"/tmp/shot1_{job['id']}.png"
-                    page.screenshot(path=shot1_path)
-                    bucket.blob(f"debug/shot1_{job['id']}.png").upload_from_filename(shot1_path)
+                    # [진단] 첫 번째 스크린샷 (로그인 전 상태 확인)
+                    shot_path = f"/tmp/shot1_{job['id']}.png"
+                    page.screenshot(path=shot_path)
+                    bucket.blob(f"debug/shot1_{job['id']}.png").upload_from_filename(shot_path)
                     shot1_url = f"https://storage.googleapis.com/{BUCKET_NAME}/debug/shot1_{job['id']}.png"
 
-                    # 2. [강화] 아이프레임 내부 버튼 탐색 및 클릭
-                    click_log = []
+                    # 2. [v1.6.0 지능형 로그인 시퀀스]
                     try:
-                        # (A) 메인 페이지 중앙 클릭
-                        page.mouse.click(640, 360)
+                        # (A) "이미 등록됨/로그인" 버튼 찾기
+                        login_gate = page.get_by_text("Already registered", exact=False).or_(
+                            page.get_by_role("button", name="Login", exact=False)
+                        ).or_(
+                            page.get_by_text("Sign in", exact=False)
+                        )
                         
-                        # (B) 모든 액자(Iframe) 내부 탐색
-                        for frame in page.frames:
-                            for t in ["Play", "재생", "Join", "참가"]:
-                                btn = frame.get_by_role("button", name=t, exact=False)
-                                if btn.is_visible():
-                                    btn.click()
-                                    click_log.append(f"Frame버튼:{t}")
+                        if login_gate.first.is_visible():
+                            login_gate.first.click()
+                            page.wait_for_timeout(3000)
+                        
+                        # (B) 이메일 입력 (DB에 저장된 email 활용)
+                        email_field = page.get_by_placeholder("email", exact=False).or_(
+                            page.locator("input[type='email']")
+                        ).or_(
+                            page.locator("input[name*='email']")
+                        )
+                        
+                        if email_field.first.is_visible():
+                            email_field.first.fill(job['email'])
+                            page.wait_for_timeout(1000)
+                            
+                            # (C) 최종 제출 버튼 클릭
+                            submit_btn = page.get_by_role("button", name="Login", exact=True).or_(
+                                page.get_by_role("button", name="Submit", exact=False)
+                            ).or_(
+                                page.locator("button[type='submit']")
+                            )
+                            submit_btn.first.click()
+                            page.wait_for_timeout(5000) # 로그인 처리 대기
                     except Exception as e:
-                        click_log.append(f"클릭오류:{str(e)[:20]}")
+                        print(f"로그인 시도 중 건너뜀: {e}")
 
-                    # 3. 녹화 진행
+                    # 3. [기존 로직] 중앙 재생 버튼 및 아이프레임 탐색
+                    page.mouse.click(640, 360) 
+                    for frame in page.frames:
+                        try:
+                            play_btn = frame.get_by_role("button", name="Play", exact=False).or_(
+                                frame.get_by_label("Play", exact=False)
+                            )
+                            if play_btn.is_visible(): play_btn.click()
+                        except: pass
+
+                    # 4. 녹화 진행
                     page.wait_for_timeout(job['duration_min'] * 60 * 1000)
                     video_path = page.video.path()
                     browser.close()
                     
-                    # 4. 결과 업로드
+                    # 5. 업로드 및 결과 보고
                     blob = bucket.blob(f"recordings/{job['title']}_{job['id']}.webm")
                     blob.upload_from_filename(video_path)
                     video_url = f"https://storage.googleapis.com/{BUCKET_NAME}/recordings/{job['title']}_{job['id']}.webm"
                     
-                    # 5. DB 업데이트
                     supabase.table("webinar_reservations").update({
                         "status": "completed", 
                         "video_url": video_url, 
-                        "failure_reason": f"클릭:{','.join(click_log)} / 진단샷: {shot1_url}"
+                        "failure_reason": f"정상완료 / 진단샷: {shot1_url}"
                     }).eq("id", job['id']).execute()
 
             except Exception as e:
                 supabase.table("webinar_reservations").update({
                     "status": "error", 
-                    "failure_reason": f"에러: {str(e)} / 진단샷: {shot1_url if 'shot1_url' in locals() else '없음'}"
+                    "failure_reason": f"에러: {str(e)} / 진단샷: {shot1_url}"
                 }).eq("id", job['id']).execute()
 
 if __name__ == "__main__":
