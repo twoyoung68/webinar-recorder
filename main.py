@@ -1,7 +1,7 @@
 # ==========================================
 # SYSTEM: Plant TI Team Webinar Recorder
-# VERSION: v1.3.0 (2026-04-28)
-# DESCRIPTION: Stable Logic & Coordinate-based Clicking
+# VERSION: v1.5.2 (2026-04-29)
+# DESCRIPTION: Iframe Penetration & Double Debug Screenshots
 # ==========================================
 
 import os, json, pytz, pandas as pd
@@ -32,55 +32,57 @@ def run_recorder():
             
             try:
                 with sync_playwright() as p:
-                    # 사람처럼 보이기 위한 브라우저 설정
-                    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                     browser = p.chromium.launch(headless=True, args=['--no-sandbox'])
-                    context = browser.new_context(
-                        user_agent=user_agent,
-                        viewport={'width': 854, 'height': 480}, 
-                        record_video_dir="/tmp/videos/"
-                    )
+                    context = browser.new_context(viewport={'width': 1280, 'height': 720}, record_video_dir="/tmp/videos/")
                     page = context.new_page()
                     
-                    # 접속 및 넉넉한 대기
+                    # 1. 접속 및 초기 대기
                     page.goto(job['webinar_url'], wait_until="networkidle", timeout=100000)
                     page.wait_for_timeout(10000) 
 
-                    # [지능형 3회 클릭 시도]
-                    for i in range(1, 4):
-                        page.wait_for_timeout(5000)
-                        try:
-                            # (A) 중앙 좌표 클릭 (삼각형 재생 버튼 타격)
-                            page.mouse.click(427, 240)
-                            # (B) 텍스트 기반 버튼 탐색 클릭
-                            for t in ["Play", "재생", "Join", "참가", "Confirm", "확인", "Enter", "입장"]:
-                                btn = page.get_by_role("button", name=t, exact=False)
-                                if btn.is_visible(): 
-                                    btn.click()
-                        except: pass
+                    # [v1.5.2] 진단용 스크린샷 1 (접속 직후)
+                    shot1_path = f"/tmp/shot1_{job['id']}.png"
+                    page.screenshot(path=shot1_path)
+                    bucket.blob(f"debug/shot1_{job['id']}.png").upload_from_filename(shot1_path)
+                    shot1_url = f"https://storage.googleapis.com/{BUCKET_NAME}/debug/shot1_{job['id']}.png"
 
-                    # 지정 시간만큼 녹화
+                    # 2. [강화] 아이프레임 내부 버튼 탐색 및 클릭
+                    click_log = []
+                    try:
+                        # (A) 메인 페이지 중앙 클릭
+                        page.mouse.click(640, 360)
+                        
+                        # (B) 모든 액자(Iframe) 내부 탐색
+                        for frame in page.frames:
+                            for t in ["Play", "재생", "Join", "참가"]:
+                                btn = frame.get_by_role("button", name=t, exact=False)
+                                if btn.is_visible():
+                                    btn.click()
+                                    click_log.append(f"Frame버튼:{t}")
+                    except Exception as e:
+                        click_log.append(f"클릭오류:{str(e)[:20]}")
+
+                    # 3. 녹화 진행
                     page.wait_for_timeout(job['duration_min'] * 60 * 1000)
-                    path = page.video.path()
+                    video_path = page.video.path()
                     browser.close()
                     
-                    # Firebase Storage 업로드
+                    # 4. 결과 업로드
                     blob = bucket.blob(f"recordings/{job['title']}_{job['id']}.webm")
-                    blob.upload_from_filename(path)
-                    
-                    # 결과 URL 생성 (ACL 에러 방지 방식)
+                    blob.upload_from_filename(video_path)
                     video_url = f"https://storage.googleapis.com/{BUCKET_NAME}/recordings/{job['title']}_{job['id']}.webm"
                     
+                    # 5. DB 업데이트
                     supabase.table("webinar_reservations").update({
                         "status": "completed", 
                         "video_url": video_url, 
-                        "failure_reason": None
+                        "failure_reason": f"클릭:{','.join(click_log)} / 진단샷: {shot1_url}"
                     }).eq("id", job['id']).execute()
 
             except Exception as e:
                 supabase.table("webinar_reservations").update({
                     "status": "error", 
-                    "failure_reason": str(e)
+                    "failure_reason": f"에러: {str(e)} / 진단샷: {shot1_url if 'shot1_url' in locals() else '없음'}"
                 }).eq("id", job['id']).execute()
 
 if __name__ == "__main__":
