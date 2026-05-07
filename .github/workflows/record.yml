@@ -20,9 +20,9 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install playwright playwright-stealth firebase_admin supabase pandas python-dotenv
+          pip install -r requirements.txt
           playwright install chromium
-
+          
       - name: Run Recorder
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
