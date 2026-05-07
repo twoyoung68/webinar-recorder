@@ -1,9 +1,10 @@
+# .github/workflows/record.yml
 name: Webinar Auto Recorder
 
 on:
   repository_dispatch:
-    types: [check_webinar]  # 구글 스케줄러가 이 이름을 호출합니다.
-  workflow_dispatch:        # 수동 실행용
+    types: [check_webinar]
+  workflow_dispatch:
 
 jobs:
   record:
@@ -15,11 +16,11 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # 3.13보다는 안정적인 3.11/3.12 추천
+          python-version: '3.11'
 
       - name: Install Dependencies
         run: |
-          pip install playwright playwright-stealth firebase-admin supabase pandas python-dotenv
+          pip install playwright playwright-stealth firebase_admin supabase pandas python-dotenv
           playwright install chromium
 
       - name: Run Recorder
@@ -29,4 +30,7 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           FIREBASE_BUCKET_NAME: ${{ secrets.FIREBASE_BUCKET_NAME }}
           USER_EMAIL: ${{ secrets.USER_EMAIL }}
+          # 구글 달력에서 보내준 데이터를 환경 변수로 주입
+          CALENDAR_TITLE: ${{ github.event.client_payload.title }}
+          CALENDAR_URL: ${{ github.event.client_payload.url }}
         run: python main.py
