@@ -1,13 +1,7 @@
-# --- [Core Recorder] ---
 playwright==1.43.0
-playwright-stealth==0.0.1
+playwright-stealth>=1.0.6
 supabase==2.4.3
 firebase-admin==6.5.0
 pandas==2.2.2
 python-dotenv==1.0.1
-
-# --- [Dashboard App] ---
 flask==3.0.3
-
-# --- [Utilities] ---
-asyncio
