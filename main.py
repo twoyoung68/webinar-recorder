@@ -92,7 +92,14 @@ async def record_webinar(job):
             
             # 클라우드 실행을 위해 headless=True (로컬 테스트 시만 False)
             browser = await p.chromium.launch(headless=True, args=['--no-sandbox'])
-            context = await browser.new_context(viewport={'width': 1280, 'height': 720}, record_video_dir=str(video_dir))
+           # context = await browser.new_context(viewport={'width': 1280, 'height': 720}, record_video_dir=str(video_dir))
+            # 수정 후: 
+             context = await browser.new_context(
+             viewport={'width': 1280, 'height': 720},    # 브라우저가 보는 화면은 크게 유지 (글자 깨짐 방지)
+             record_video_dir=str(video_dir),
+             record_video_size={'width': 640, 'height': 360} # 👈 실제 저장되는 영상 크기를 360p로 줄여서 용량 절감
+             )
+            
             page = await context.new_page()
             await apply_stealth(page)
 
