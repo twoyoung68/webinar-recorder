@@ -1,119 +1,139 @@
-# ==========================================
-# SYSTEM: Plant TI Team Webinar Recorder
-# VERSION: v1.6.0 (2026-04-29)
-# DESCRIPTION: Universal Login Agent & Iframe Penetration
-# ==========================================
+# main.py
+import os
+import sys
+import json
+import asyncio
+import logging
+import re
+import random
+import pandas as pd
+import datetime as dt
+from pathlib import Path
+from dotenv import load_dotenv
+from datetime import timezone
 
-import os, json, pytz, pandas as pd
-from datetime import datetime
-from firebase_admin import credentials, storage, initialize_app, _apps
-from supabase import create_client
-from playwright.sync_api import sync_playwright
+# --- [1. 초기화] ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+load_dotenv()
 
-# --- 설정 ---
-BUCKET_NAME = "webinar-recordings-plant-ti" 
-KST = pytz.timezone('Asia/Seoul')
+try:
+    from playwright.async_api import async_playwright
+    import playwright_stealth
+    import firebase_admin
+    from firebase_admin import credentials, storage
+    from supabase import create_client
+except ImportError as e:
+    logging.critical(f"❌ 필수 라이브러리 누락: {e}")
+    sys.exit(1)
 
-if not _apps:
-    info = json.loads(os.getenv("FIREBASE_SERVICE_ACCOUNT"), strict=False)
-    initialize_app(credentials.Certificate(info), {'storageBucket': f"{BUCKET_NAME}.appspot.com"})
+# Firebase/Supabase 설정
+try:
+    firebase_admin.get_app()
+except ValueError:
+    cred_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
+    cred_info = json.loads(cred_json, strict=False)
+    firebase_admin.initialize_app(credentials.Certificate(cred_info), {'storageBucket': os.getenv('FIREBASE_BUCKET_NAME')})
 
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-bucket = storage.bucket(BUCKET_NAME)
+supabase = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
+bucket = storage.bucket()
 
-def run_recorder():
-    now_utc = datetime.now(pytz.utc)
-    res = supabase.table("webinar_reservations").select("*").in_("status", ["pending", "trigger"]).execute()
-    
-    for job in res.data:
-        sched_utc = pd.to_datetime(job['scheduled_at']).astimezone(pytz.utc)
-        
-        if now_utc >= sched_utc:
-            supabase.table("webinar_reservations").update({"status": "running"}).eq("id", job['id']).execute()
-            shot1_url = ""
+# --- [2. 인간미 로직] ---
+async def apply_stealth(page):
+    try:
+        if hasattr(playwright_stealth, 'stealth_async'): await getattr(playwright_stealth, 'stealth_async')(page)
+        elif hasattr(playwright_stealth, 'stealth'): await getattr(playwright_stealth, 'stealth')(page)
+    except: pass
+
+async def human_move_and_click(page, element):
+    box = await element.bounding_box()
+    if not box: return
+    tx, ty = box['x'] + box['width']/2, box['y'] + box['height']/2
+    await page.mouse.move(tx - random.randint(50, 150), ty + random.randint(30, 70), steps=10)
+    await asyncio.sleep(random.uniform(0.3, 0.6))
+    await page.mouse.move(tx, ty, steps=15)
+    await page.mouse.click(tx, ty, delay=random.randint(100, 250))
+
+async def human_type(page, selector, text):
+    await page.click(selector)
+    for char in text:
+        await page.type(selector, char, delay=random.randint(60, 150))
+
+# --- [3. 지능형 로그인 (Gasworld 및 일반 대응)] ---
+async def handle_login(page, user_email):
+    h = page.viewport_size['height']
+    # 1. 기등록자 클릭 (Gasworld 스타일)
+    reg_link = page.get_by_role("link", name=re.compile(r"CLICK HERE TO LOGIN|ALREADY REGISTERED", re.IGNORECASE))
+    if await reg_link.is_visible(timeout=5000):
+        await human_move_and_click(page, reg_link)
+        await asyncio.sleep(4)
+
+    # 2. 이메일 입력 및 로그인 (중앙 영역 우선)
+    email_selector = "input[type='email'], input[placeholder*='email' i]"
+    email_input = page.locator(email_selector).first
+    if await email_input.is_visible(timeout=5000):
+        input_box = await email_input.bounding_box()
+        if input_box and (h * 0.15 < input_box['y'] < h * 0.85):
+            await human_type(page, email_selector, user_email)
+            # 주변 Login/Join 버튼 클릭
+            submit_btn = page.get_by_text(re.compile(r"(login|join|submit|enter|watch)", re.IGNORECASE)).first
+            await human_move_and_click(page, submit_btn)
+            await asyncio.sleep(5)
+    else:
+        logging.info("✅ 일반 화면 혹은 이미 입장된 상태로 판단됩니다.")
+
+# --- [4. 녹화 엔진] ---
+async def record_webinar(job):
+    browser = None
+    try:
+        async with async_playwright() as p:
+            logging.info(f"🎬 녹화 시작: {job.get('title') or '제목없음'}")
+            video_dir = Path("videos")
+            video_dir.mkdir(exist_ok=True)
             
-            try:
-                with sync_playwright() as p:
-                    browser = p.chromium.launch(headless=True, args=['--no-sandbox'])
-                    context = browser.new_context(viewport={'width': 1280, 'height': 720}, record_video_dir="/tmp/videos/")
-                    page = context.new_page()
-                    
-                    # 1. 접속 및 초기 대기
-                    page.goto(job['webinar_url'], wait_until="networkidle", timeout=100000)
-                    page.wait_for_timeout(10000) 
+            # 클라우드 실행을 위해 headless=True (로컬 테스트 시만 False)
+            browser = await p.chromium.launch(headless=True, args=['--no-sandbox'])
+            context = await browser.new_context(viewport={'width': 1280, 'height': 720}, record_video_dir=str(video_dir))
+            page = await context.new_page()
+            await apply_stealth(page)
 
-                    # [진단] 첫 번째 스크린샷 (로그인 전 상태 확인)
-                    shot_path = f"/tmp/shot1_{job['id']}.png"
-                    page.screenshot(path=shot_path)
-                    bucket.blob(f"debug/shot1_{job['id']}.png").upload_from_filename(shot_path)
-                    shot1_url = f"https://storage.googleapis.com/{BUCKET_NAME}/debug/shot1_{job['id']}.png"
+            await page.goto(job['webinar_url'], wait_until="networkidle")
+            await asyncio.sleep(5)
+            
+            user_email = os.getenv("USER_EMAIL", "bot@daewoo.com")
+            await handle_login(page, user_email)
 
-                    # 2. [v1.6.0 지능형 로그인 시퀀스]
-                    try:
-                        # (A) "이미 등록됨/로그인" 버튼 찾기
-                        login_gate = page.get_by_text("Already registered", exact=False).or_(
-                            page.get_by_role("button", name="Login", exact=False)
-                        ).or_(
-                            page.get_by_text("Sign in", exact=False)
-                        )
-                        
-                        if login_gate.first.is_visible():
-                            login_gate.first.click()
-                            page.wait_for_timeout(3000)
-                        
-                        # (B) 이메일 입력 (DB에 저장된 email 활용)
-                        email_field = page.get_by_placeholder("email", exact=False).or_(
-                            page.locator("input[type='email']")
-                        ).or_(
-                            page.locator("input[name*='email']")
-                        )
-                        
-                        if email_field.first.is_visible():
-                            email_field.first.fill(job['email'])
-                            page.wait_for_timeout(1000)
-                            
-                            # (C) 최종 제출 버튼 클릭
-                            submit_btn = page.get_by_role("button", name="Login", exact=True).or_(
-                                page.get_by_role("button", name="Submit", exact=False)
-                            ).or_(
-                                page.locator("button[type='submit']")
-                            )
-                            submit_btn.first.click()
-                            page.wait_for_timeout(5000) # 로그인 처리 대기
-                    except Exception as e:
-                        print(f"로그인 시도 중 건너뜀: {e}")
+            duration = int(job.get('duration_min', 1))
+            for i in range(duration):
+                await asyncio.sleep(60)
+                progress = int((i + 1) / duration * 100)
+                try: supabase.table("webinar_reservations").update({"progress": progress}).eq("id", job['id']).execute()
+                except: pass
+                logging.info(f"📹 진행 중: {i+1}/{duration}분")
 
-                    # 3. [기존 로직] 중앙 재생 버튼 및 아이프레임 탐색
-                    page.mouse.click(640, 360) 
-                    for frame in page.frames:
-                        try:
-                            play_btn = frame.get_by_role("button", name="Play", exact=False).or_(
-                                frame.get_by_label("Play", exact=False)
-                            )
-                            if play_btn.is_visible(): play_btn.click()
-                        except: pass
+            await context.close()
+            video_path = await page.video.path()
+            await browser.close()
+            
+            if video_path and os.path.exists(video_path):
+                remote_name = f"webinars/{job['id']}_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.webm"
+                bucket.blob(remote_name).upload_from_filename(video_path)
+                os.remove(video_path)
+                supabase.table("webinar_reservations").update({"status": "completed", "video_url": remote_name}).eq("id", job['id']).execute()
+                logging.info("✅ 저장 완료")
+    except Exception as e:
+        logging.error(f"❌ 오류: {e}")
+        try: supabase.table("webinar_reservations").update({"status": "failed", "error_message": str(e)}).eq("id", job['id']).execute()
+        except: pass
 
-                    # 4. 녹화 진행
-                    page.wait_for_timeout(job['duration_min'] * 60 * 1000)
-                    video_path = page.video.path()
-                    browser.close()
-                    
-                    # 5. 업로드 및 결과 보고
-                    blob = bucket.blob(f"recordings/{job['title']}_{job['id']}.webm")
-                    blob.upload_from_filename(video_path)
-                    video_url = f"https://storage.googleapis.com/{BUCKET_NAME}/recordings/{job['title']}_{job['id']}.webm"
-                    
-                    supabase.table("webinar_reservations").update({
-                        "status": "completed", 
-                        "video_url": video_url, 
-                        "failure_reason": f"정상완료 / 진단샷: {shot1_url}"
-                    }).eq("id", job['id']).execute()
-
-            except Exception as e:
-                supabase.table("webinar_reservations").update({
-                    "status": "error", 
-                    "failure_reason": f"에러: {str(e)} / 진단샷: {shot1_url}"
-                }).eq("id", job['id']).execute()
+async def main():
+    now_utc = dt.datetime.now(timezone.utc)
+    # reason이 샷1인 것만 찾는 등 필터링 가능 (reason or "" 처리 포함)
+    res = supabase.table("webinar_reservations").select("*").in_("status", ["pending", "trigger"]).execute()
+    for job in res.data:
+        sch_time = pd.to_datetime(job['scheduled_at'], utc=True).to_pydatetime()
+        if now_utc >= sch_time:
+            locked = supabase.table("webinar_reservations").update({"status": "running", "started_at": now_utc.isoformat()}).eq("id", job['id']).in_("status", ["pending", "trigger"]).execute()
+            if locked.data: await record_webinar(job)
 
 if __name__ == "__main__":
-    run_recorder()
+    asyncio.run(main())
