@@ -126,14 +126,39 @@ async def record_webinar(job):
         except: pass
 
 async def main():
-    now_utc = dt.datetime.now(timezone.utc)
-    # reason이 샷1인 것만 찾는 등 필터링 가능 (reason or "" 처리 포함)
-    res = supabase.table("webinar_reservations").select("*").in_("status", ["pending", "trigger"]).execute()
-    for job in res.data:
-        sch_time = pd.to_datetime(job['scheduled_at'], utc=True).to_pydatetime()
-        if now_utc >= sch_time:
-            locked = supabase.table("webinar_reservations").update({"status": "running", "started_at": now_utc.isoformat()}).eq("id", job['id']).in_("status", ["pending", "trigger"]).execute()
-            if locked.data: await record_webinar(job)
+    logging.info("🕵️ 감시병(v2.3.0) 가동 시작...")
+    
+    # 1. 구글 달력(GitHub Payload)에서 온 데이터가 있는지 확인
+    cal_title = os.getenv("CALENDAR_TITLE")
+    cal_url = os.getenv("CALENDAR_URL")
+
+    if cal_title and cal_url:
+        logging.info(f"📅 구글 달력 일정을 감지했습니다: {cal_title}")
+        job = {
+            "id": f"cal_{dt.datetime.now().strftime('%H%M%S')}",
+            "title": cal_title,
+            "webinar_url": cal_url,
+            "duration_min": 60 # 기본 1시간 녹화 (필요시 조절)
+        }
+        await record_webinar(job)
+        return # 달력 일정 처리 후 종료
+
+    # 2. 달력 데이터가 없으면 기존처럼 Supabase 확인 (백업용)
+    try:
+        now_utc = dt.datetime.now(timezone.utc)
+        res = supabase.table("webinar_reservations").select("*").in_("status", ["pending", "trigger"]).execute()
+        
+        for job in res.data:
+            sch_time = pd.to_datetime(job['scheduled_at'], utc=True).to_pydatetime()
+            if now_utc >= sch_time:
+                locked = supabase.table("webinar_reservations").update({
+                    "status": "running", "started_at": now_utc.isoformat()
+                }).eq("id", job['id']).in_("status", ["pending", "trigger"]).execute()
+                
+                if locked.data:
+                    await record_webinar(job)
+    except Exception as e:
+        logging.error(f"⚠️ Supabase 확인 중 오류: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())
