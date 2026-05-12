@@ -1,7 +1,7 @@
 # ==========================================
 # SYSTEM: Plant TI Team Webinar Master
-# VERSION: v2.3.11 (Armor Edition)
-# DESCRIPTION: 라이브러리 버전 충돌 완전 해결 및 유튜브 위장 강화
+# VERSION: v2.4.2 (Cookie Vault Edition)
+# DESCRIPTION: 도메인별 쿠키 자동 주입 및 듀얼 하이브리드 녹화 엔진
 # ==========================================
 
 import os
@@ -12,9 +12,10 @@ import logging
 import random
 import datetime as dt
 from pathlib import Path
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
-# [핵심] 라이브러리 로드 방식 변경 (에러 방지용)
+# 필수 라이브러리 로드
 try:
     from playwright.async_api import async_playwright
     import playwright_stealth
@@ -28,7 +29,7 @@ except ImportError as e:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 load_dotenv()
 
-# 서비스 초기화
+# --- 1. 서비스 초기화 ---
 try:
     firebase_admin.get_app()
 except ValueError:
@@ -40,99 +41,134 @@ except ValueError:
 supabase = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
 bucket = storage.bucket()
 
+# --- 2. 위장 및 자동화 함수군 ---
+
 async def apply_stealth(page):
-    """라이브러리 버전에 상관없이 Stealth 모드를 적용하는 철벽 함수"""
+    """버전 호환성을 고려한 Stealth 위장 적용"""
     try:
-        # 방식 1: stealth_async 시도
         if hasattr(playwright_stealth, 'stealth_async'):
             await playwright_stealth.stealth_async(page)
-            logging.info("🛡️ Stealth_async 적용 완료")
-        # 방식 2: 그냥 stealth 시도
         elif hasattr(playwright_stealth, 'stealth'):
-            # sync 함수인 경우를 대비해 처리
             playwright_stealth.stealth(page)
-            logging.info("🛡️ Stealth 적용 완료")
-        else:
-            logging.warning("⚠️ Stealth 함수를 찾을 수 없어 수동 위장을 실시합니다.")
-            # 수동 위장: webdriver 속성 제거
-            await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        logging.info("🛡️ Stealth 위장 모드 활성화")
     except Exception as e:
-        logging.warning(f"🛡️ Stealth 적용 중 오류 발생 (무시하고 진행): {e}")
+        logging.warning(f"🛡️ Stealth 적용 건너뜀: {e}")
 
 async def human_emulation(page):
-    """인간적인 움직임 시뮬레이션"""
+    """인간적인 마우스 움직임 시뮬레이션"""
     try:
-        logging.info("🕵️ 인간 위장 동작 수행...")
         for _ in range(random.randint(3, 5)):
-            x, y = random.randint(100, 800), random.randint(100, 500)
+            x, y = random.randint(200, 1000), random.randint(150, 600)
             await page.mouse.move(x, y, steps=25)
             await asyncio.sleep(random.uniform(0.5, 1.2))
     except: pass
 
 async def click_play_button(page):
-    """지능형 플레이 버튼 클릭"""
+    """플레이 버튼 탐지 및 클릭"""
     try:
-        await asyncio.sleep(random.uniform(8.0, 12.0))
+        await asyncio.sleep(random.uniform(7.0, 12.0))
         play_selectors = [
             "button[aria-label*='재생' i]", ".ytp-large-play-button", 
-            "button[aria-label*='Play' i]", ".vjs-big-play-button"
+            "button[aria-label*='Play' i]", ".vjs-big-play-button",
+            "button.play", "svg[viewBox*='0 0 16 16']"
         ]
         for selector in play_selectors:
             btn = page.locator(selector).first
             if await btn.is_visible(timeout=3000):
-                logging.info(f"🎯 버튼 발견: {selector}")
+                logging.info(f"🎯 버튼 발견 및 클릭: {selector}")
                 await btn.click(delay=random.randint(300, 800))
                 return True
-        logging.info("⚠️ 버튼 탐색 실패, 중앙 클릭")
+        logging.info("⚠️ 버튼 미발견, 화면 중앙 클릭 수행")
         await page.mouse.click(640, 360, delay=random.randint(300, 600))
     except: pass
 
+# --- 3. 핵심 녹화 엔진 ---
+
 async def record_webinar(job):
     async with async_playwright() as p:
-        logging.info(f"🎬 v2.3.11 세션 시작: {job.get('title')}")
+        logging.info(f"🎬 v2.4.2 녹화 시작: {job.get('title')}")
         video_dir = Path("videos")
         video_dir.mkdir(exist_ok=True)
         
-        browser = await p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-blink-features=AutomationControlled'])
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            viewport={'width': 1280, 'height': 720},
-            locale="ko-KR", timezone_id="Asia/Seoul"
-        )
+        # [STEP 1] 도메인 분석 및 쿠키 금고 조회
+        parsed_url = urlparse(job['webinar_url'])
+        domain = parsed_url.netloc.replace("www.", "").lower()
         
+        # [STEP 2] 브라우저 실행 모드 결정
+        try:
+            # 근무 중: 로컬 크롬 연결 시도 (포트 9222)
+            browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+            context = browser.contexts[0]
+            logging.info(f"🖥️ 로컬 하이브리드 모드 연결 성공 (Domain: {domain})")
+        except:
+            # 야간/부재 시: 클라우드 스텔스 모드
+            browser = await p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-blink-features=AutomationControlled'])
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                viewport={'width': 1280, 'height': 720},
+                locale="ko-KR", timezone_id="Asia/Seoul",
+                record_video_dir=str(video_dir),
+                record_video_size={'width': 1280, 'height': 720}
+            )
+            
+            # [Cookie Vault] 금고에서 해당 도메인의 쿠키가 있는지 확인
+            res_cookie = supabase.table("webinar_cookies").select("cookie_data").eq("domain", domain).execute()
+            if res_cookie.data:
+                await context.add_cookies(res_cookie.data[0]['cookie_data'])
+                logging.info(f"🍪 금고에서 {domain} 전용 쿠키를 꺼내 주입했습니다.")
+            
+            logging.info("☁️ 클라우드 스텔스 모드 활성화")
+
         page = await context.new_page()
-        
-        # [철벽 보안 적용]
         await apply_stealth(page)
             
         try:
-            await page.goto(job['webinar_url'], wait_until="networkidle", timeout=60000)
+            # 주소 접속
+            await page.goto(job['webinar_url'], wait_until="domcontentloaded", timeout=90000)
+            
+            # 위장 동작 및 재생 시작
             await human_emulation(page)
             await click_play_button(page)
 
-            # 녹화 진행
+            # 녹화 대기 루프
             duration = int(job.get('duration_min', 60))
             for i in range(duration):
                 await asyncio.sleep(60)
-                if i % 5 == 0: logging.info(f"📹 촬영 중... {i+1}/{duration} 분")
+                if i % 10 == 0: logging.info(f"📹 촬영 중... {i+1}/{duration} 분")
 
+            # 종료 및 업로드
             await context.close()
             video_path = await page.video.path()
             await browser.close()
             
             if video_path and os.path.exists(video_path):
-                remote_name = f"webinars/{job['id']}_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.webm"
+                file_id = job['id']
+                timestamp = dt.datetime.now().strftime('%Y%m%d_%H%M%S')
+                remote_name = f"webinars/{file_id}_{timestamp}.webm"
+                
                 bucket.blob(remote_name).upload_from_filename(video_path)
                 os.remove(video_path)
-                supabase.table("webinar_reservations").update({"status": "completed", "video_url": remote_name}).eq("id", job['id']).execute()
-                logging.info(f"✅ 업로드 완료: {remote_name}")
+                
+                # DB 상태 업데이트
+                supabase.table("webinar_reservations").update({
+                    "status": "completed", 
+                    "video_url": remote_name
+                }).eq("id", job['id']).execute()
+                logging.info(f"✅ 파일 업로드 완료: {remote_name}")
+
         except Exception as e:
-            logging.error(f"❌ 에러 발생: {e}")
+            logging.error(f"❌ 녹화 세션 에러: {e}")
             await browser.close()
 
 async def main():
+    # 처리 대기 중인 예약건 확인
     res = supabase.table("webinar_reservations").select("*").in_("status", ["pending", "trigger"]).execute()
-    for job in res.data: await record_webinar(job)
+    if not res.data:
+        logging.info("💤 처리할 예약 일정이 없습니다.")
+        return
+        
+    for job in res.data:
+        await record_webinar(job)
 
 if __name__ == "__main__":
     asyncio.run(main())
