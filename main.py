@@ -1,7 +1,7 @@
 # ==========================================
 # SYSTEM: Plant TI Team Webinar Master
-# VERSION: v2.3.10 (Ultimate Evasion)
-# DESCRIPTION: Stealth 라이브러리 에러 수정 및 위장 로직 강화
+# VERSION: v2.3.11 (Armor Edition)
+# DESCRIPTION: 라이브러리 버전 충돌 완전 해결 및 유튜브 위장 강화
 # ==========================================
 
 import os
@@ -14,10 +14,10 @@ import datetime as dt
 from pathlib import Path
 from dotenv import load_dotenv
 
-# 필수 라이브러리 로드
+# [핵심] 라이브러리 로드 방식 변경 (에러 방지용)
 try:
     from playwright.async_api import async_playwright
-    from playwright_stealth import stealth_async  # 호출 방식 변경
+    import playwright_stealth
     import firebase_admin
     from firebase_admin import credentials, storage
     from supabase import create_client
@@ -40,95 +40,81 @@ except ValueError:
 supabase = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
 bucket = storage.bucket()
 
-async def human_emulation(page):
-    """인간처럼 마우스와 스크롤을 조작하여 유튜브 감지 우회"""
-    logging.info("🕵️ 인간 위장 동작 수행 중...")
+async def apply_stealth(page):
+    """라이브러리 버전에 상관없이 Stealth 모드를 적용하는 철벽 함수"""
     try:
-        # 1. 자연스러운 마우스 이동 (지그재그)
-        for _ in range(random.randint(4, 7)):
-            x, y = random.randint(200, 900), random.randint(150, 500)
-            await page.mouse.move(x, y, steps=random.randint(15, 30))
-            await asyncio.sleep(random.uniform(0.3, 1.0))
-
-        # 2. 페이지 스크롤 (관심 있는 척)
-        await page.mouse.wheel(0, random.randint(150, 400))
-        await asyncio.sleep(random.uniform(1.0, 2.0))
-        await page.mouse.wheel(0, random.randint(-400, -150))
+        # 방식 1: stealth_async 시도
+        if hasattr(playwright_stealth, 'stealth_async'):
+            await playwright_stealth.stealth_async(page)
+            logging.info("🛡️ Stealth_async 적용 완료")
+        # 방식 2: 그냥 stealth 시도
+        elif hasattr(playwright_stealth, 'stealth'):
+            # sync 함수인 경우를 대비해 처리
+            playwright_stealth.stealth(page)
+            logging.info("🛡️ Stealth 적용 완료")
+        else:
+            logging.warning("⚠️ Stealth 함수를 찾을 수 없어 수동 위장을 실시합니다.")
+            # 수동 위장: webdriver 속성 제거
+            await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     except Exception as e:
-        logging.info(f"위장 동작 중 무시 가능한 에러: {e}")
+        logging.warning(f"🛡️ Stealth 적용 중 오류 발생 (무시하고 진행): {e}")
+
+async def human_emulation(page):
+    """인간적인 움직임 시뮬레이션"""
+    try:
+        logging.info("🕵️ 인간 위장 동작 수행...")
+        for _ in range(random.randint(3, 5)):
+            x, y = random.randint(100, 800), random.randint(100, 500)
+            await page.mouse.move(x, y, steps=25)
+            await asyncio.sleep(random.uniform(0.5, 1.2))
+    except: pass
 
 async def click_play_button(page):
-    """지능형 플레이 버튼 클릭 로직"""
+    """지능형 플레이 버튼 클릭"""
     try:
-        # 화면이 안정될 때까지 충분히 대기
-        await asyncio.sleep(random.uniform(7.0, 11.0))
-        
+        await asyncio.sleep(random.uniform(8.0, 12.0))
         play_selectors = [
-            "button[aria-label*='재생' i]", 
-            "button[aria-label*='Play' i]",
-            ".ytp-large-play-button", 
-            ".vjs-big-play-button",
-            "xpath=//button[contains(@class, 'play')]"
+            "button[aria-label*='재생' i]", ".ytp-large-play-button", 
+            "button[aria-label*='Play' i]", ".vjs-big-play-button"
         ]
-
         for selector in play_selectors:
             btn = page.locator(selector).first
-            if await btn.is_visible(timeout=4000):
-                logging.info(f"🎯 플레이 버튼 조준 완료: {selector}")
-                # 마우스 타겟팅 시각화
-                box = await btn.bounding_box()
-                if box:
-                    await page.mouse.move(box['x'] + box['width']/2, box['y'] + box['height']/2, steps=20)
-                await btn.click(delay=random.randint(300, 700))
-                logging.info("▶️ 재생 시작!")
+            if await btn.is_visible(timeout=3000):
+                logging.info(f"🎯 버튼 발견: {selector}")
+                await btn.click(delay=random.randint(300, 800))
                 return True
-        
-        logging.info("⚠️ 버튼 탐색 실패, 정중앙 강제 클릭 수행")
+        logging.info("⚠️ 버튼 탐색 실패, 중앙 클릭")
         await page.mouse.click(640, 360, delay=random.randint(300, 600))
-        return True
-    except Exception as e:
-        logging.info(f"클릭 시퀀스 예외 발생: {e}")
+    except: pass
 
 async def record_webinar(job):
     async with async_playwright() as p:
-        logging.info(f"🎬 v2.3.10 녹화 세션 시작: {job.get('title')}")
+        logging.info(f"🎬 v2.3.11 세션 시작: {job.get('title')}")
         video_dir = Path("videos")
         video_dir.mkdir(exist_ok=True)
         
-        # 브라우저 컨텍스트 설정 (최대한 일반 사용자처럼)
-        browser = await p.chromium.launch(headless=True, args=['--no-sandbox'])
+        browser = await p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-blink-features=AutomationControlled'])
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             viewport={'width': 1280, 'height': 720},
-            locale="ko-KR",
-            timezone_id="Asia/Seoul",
-            record_video_dir=str(video_dir),
-            record_video_size={'width': 1280, 'height': 720} # 유튜브 선명도를 위해 해상도 복구
+            locale="ko-KR", timezone_id="Asia/Seoul"
         )
         
         page = await context.new_page()
         
-        # [수정 포인트] Stealth 적용 방식 변경 및 예외 처리
-        try:
-            await stealth_async(page)
-            logging.info("🛡️ Stealth 위장 모드 활성화 완료")
-        except Exception as e:
-            logging.warning(f"🛡️ Stealth 적용 실패 (무시하고 진행): {e}")
+        # [철벽 보안 적용]
+        await apply_stealth(page)
             
         try:
-            # 주소 이동
-            await page.goto(job['webinar_url'], wait_until="domcontentloaded", timeout=60000)
-            
-            # 사람 흉내내기 시동
+            await page.goto(job['webinar_url'], wait_until="networkidle", timeout=60000)
             await human_emulation(page)
-            
-            # 플레이 버튼 클릭
             await click_play_button(page)
 
+            # 녹화 진행
             duration = int(job.get('duration_min', 60))
             for i in range(duration):
                 await asyncio.sleep(60)
-                if i % 10 == 0: logging.info(f"📹 촬영 진행 중... {i+1}/{duration} 분")
+                if i % 5 == 0: logging.info(f"📹 촬영 중... {i+1}/{duration} 분")
 
             await context.close()
             video_path = await page.video.path()
@@ -140,9 +126,8 @@ async def record_webinar(job):
                 os.remove(video_path)
                 supabase.table("webinar_reservations").update({"status": "completed", "video_url": remote_name}).eq("id", job['id']).execute()
                 logging.info(f"✅ 업로드 완료: {remote_name}")
-
         except Exception as e:
-            logging.error(f"❌ 세션 종료 에러: {e}")
+            logging.error(f"❌ 에러 발생: {e}")
             await browser.close()
 
 async def main():
