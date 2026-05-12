@@ -1,7 +1,7 @@
 # ==========================================
 # SYSTEM: Plant TI Team Webinar Master
-# VERSION: v2.3.7 (On-Demand Player Edition)
-# DESCRIPTION: 글로벌 타임존 변환 및 VOD 관리 시스템
+# VERSION: v2.5.4 (Control Center Edition)
+# DESCRIPTION: v2.3.7 기반 UI + 구글 캘린더 안내 및 상세 현황
 # ==========================================
 
 import streamlit as st
@@ -17,19 +17,9 @@ from supabase import create_client
 from dotenv import load_dotenv
 
 # --- 1. 페이지 및 환경 설정 ---
-st.set_page_config(page_title="Plant TI Center v2.3.7", page_icon="🎥", layout="wide")
+st.set_page_config(page_title="Plant TI Control Center v2.5.4", page_icon="🎥", layout="wide")
 load_dotenv()
 KST = pytz.timezone('Asia/Seoul')
-
-WORLD_ZONES = {
-    "대한민국 (KST)": "Asia/Seoul",
-    "미국 동부 (EST/EDT)": "America/New_York",
-    "미국 서부 (PST/PDT)": "America/Los_Angeles",
-    "영국 (GMT/BST)": "Europe/London",
-    "독일/프랑스 (CET/CEST)": "Europe/Paris",
-    "싱가포르/대만 (CST)": "Asia/Singapore",
-    "일본 (JST)": "Asia/Tokyo"
-}
 
 # --- 2. 서비스 연결 초기화 ---
 @st.cache_resource
@@ -48,73 +38,64 @@ def init_connections():
 
 supabase, bucket = init_connections()
 
-# --- 3. UI 디자인 ---
-st.markdown("""
-    <style>
-    .time-box { background-color: #f0f7ff; padding: 20px; border-radius: 12px; border: 2px solid #003399; margin: 15px 0; }
-    .kst-highlight { color: #FF5733; font-weight: 900; font-size: 24px; }
-    .created-at { font-size: 11px; color: #888; }
-    </style>
-""", unsafe_allow_html=True)
-
+# --- 3. UI 디자인 및 사이드바 ---
 st.sidebar.markdown(f"""
     <div style="background-color: #003399; padding: 15px; border-radius: 10px; text-align: center; color: white;">
         <h2 style="margin:0;">🏗️ DAEWOO E&C</h2>
-        <p style="margin:0; font-size: 14px; opacity: 0.8;">Plant TI Team v2.3.7</p>
+        <p style="margin:0; font-size: 14px; opacity: 0.8;">Plant TI Team v2.5.4</p>
     </div>
     """, unsafe_allow_html=True)
 
 menu = st.sidebar.radio("메뉴 선택", ["📅 예약 및 현황", "🎥 녹화 완료 파일"])
 
-# --- 4. [메뉴 1] 예약 및 현황 ---
+# --- 4. [메뉴 1] 예약 및 현황 (통합 컨트롤러) ---
 if menu == "📅 예약 및 현황":
-    st.title("📅 글로벌 웨비나 예약 시스템")
+    st.title("📅 웨비나 자동화 관제 센터")
     
+    # [안내 섹션] 구글 캘린더 예약 가이드
     with st.container(border=True):
-        st.subheader("📝 일정 등록")
-        title = st.text_input("1. 웨비나 명칭")
-        url_input = st.text_input("2. 접속 URL")
-        
-        c1, c2 = st.columns(2)
-        with c1: selected_zone = st.selectbox("3. 개최지 타임존", list(WORLD_ZONES.keys()))
-        with c2: duration = st.number_input("4. 녹화 시간(분)", min_value=1, value=60)
-        
-        col_d, col_t = st.columns(2)
-        with col_d: rec_date = st.date_input("5. 현지 날짜")
-        with col_t: rec_time = st.time_input("6. 현지 시각")
-
-        # 타임존 변환 로직
-        target_tz = pytz.timezone(WORLD_ZONES[selected_zone])
-        local_dt = target_tz.localize(datetime.combine(rec_date, rec_time))
-        kst_dt = local_dt.astimezone(KST)
-        
-        st.markdown(f"""<div class="time-box"><span style="color:gray;">🚀 실제 녹화 시작 (KST):</span><br><span class="kst-highlight">{kst_dt.strftime("%Y-%m-%d %H:%M")}</span></div>""", unsafe_allow_html=True)
-
-        if st.button("🚀 예약 확정", use_container_width=True):
-            if title and url_input:
-                supabase.table("webinar_reservations").insert({
-                    "title": title, "webinar_url": url_input, "scheduled_at": kst_dt.isoformat(),
-                    "duration_min": duration, "status": "pending", "download_count": 0
-                }).execute()
-                st.success("예약이 등록되었습니다.")
-                st.rerun()
+        col_txt, col_btn = st.columns([3, 1])
+        with col_txt:
+            st.markdown("""
+            ### 🚀 웨비나 예약 방법 (10분 전 자동 감지)
+            이 시스템은 **구글 캘린더**와 연동되어 작동합니다.
+            1. 아래 버튼을 눌러 **구글 캘린더**를 여세요.
+            2. **제목**: 웨비나 명칭 입력 (예: 가스 월드 수전해 세미나)
+            3. **설명/장소**: `https://...` 주소를 반드시 포함하세요.
+            4. **자동화**: 10분마다 시스템이 감지하여 깃허브에서 녹화를 시작합니다.
+            """)
+        with col_btn:
+            st.write(" ") 
+            st.write(" ")
+            st.link_button("📅 내 구글 캘린더 열기", "https://calendar.google.com/", use_container_width=True, type="primary")
 
     st.divider()
-    st.subheader("📊 대기 일정")
+    
+    # [현황 섹션] 상세 시간 정보 표시
+    st.subheader("📊 현재 예약 및 녹화 현황")
     res = supabase.table("webinar_reservations").select("*").in_("status", ["pending", "running"]).order("scheduled_at").execute()
-    for item in res.data:
-        s_kst = pd.to_datetime(item['scheduled_at']).astimezone(KST)
-        created = pd.to_datetime(item['created_at']).astimezone(KST).strftime('%Y-%m-%d %H:%M')
-        with st.expander(f"[{item['status'].upper()}] {item['title']} | {s_kst.strftime('%m-%d %H:%M')}"):
-            st.write(f"🔗 {item['webinar_url']}")
-            st.markdown(f"<p class='created-at'>🕒 예약 등록일: {created}</p>", unsafe_allow_html=True)
-            if st.button("🗑️ 일정 취소", key=f"can_{item['id']}"):
-                supabase.table("webinar_reservations").delete().eq("id", item['id']).execute()
-                st.rerun()
+    
+    if not res.data:
+        st.info("현재 대기 중인 예약 일정이 없습니다. 구글 캘린더에 일정을 등록해 보세요.")
+    else:
+        for item in res.data:
+            s_kst = pd.to_datetime(item['scheduled_at']).astimezone(KST).strftime('%Y-%m-%d %H:%M')
+            created = pd.to_datetime(item['created_at']).astimezone(KST).strftime('%Y-%m-%d %H:%M')
+            
+            with st.expander(f"[{item['status'].upper()}] {item['title']} | ⏰ {s_kst} 시작"):
+                st.markdown(f"""
+                - **📝 예약 등록 시각:** `{created}`
+                - **⏰ 녹화 시작 예정:** `{s_kst}`
+                - **🕒 녹화 지속 시간:** `{item.get('duration_min', 60)}분`
+                - **🔗 접속 URL:** {item['webinar_url']}
+                """)
+                if st.button("🗑️ 일정 취소", key=f"can_{item['id']}", use_container_width=True):
+                    supabase.table("webinar_reservations").delete().eq("id", item['id']).execute()
+                    st.rerun()
 
 # --- 5. [메뉴 2] 녹화 완료 파일 ---
 elif menu == "🎥 녹화 완료 파일":
-    st.title("🎥 녹화 결과물 리스트")
+    st.title("🎥 녹화 결과물 관리")
     res_db = supabase.table("webinar_reservations").select("*").execute()
     db_map = {item['video_url']: item for item in res_db.data if item.get('video_url')}
     blobs = list(bucket.list_blobs(prefix="webinars/"))
